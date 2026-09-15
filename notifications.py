@@ -450,6 +450,28 @@ def send_telegram(alert: TradeAlert, plan: PositionPlan) -> bool:
         return False
 
 
+def send_telegram_text(text: str) -> bool:
+    """Send a plain-text integration message, e.g. an F&O trade card or EOD report."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+    if not token or not chat_id or token.startswith("your_"):
+        logger.info("Telegram not configured — skipping")
+        return False
+
+    try:
+        response = requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": str(text)[:4000]},
+            timeout=15,
+        )
+        response.raise_for_status()
+        logger.info("Telegram text notification sent")
+        return True
+    except requests.RequestException as exc:
+        logger.error("Telegram text send failed: %s", exc)
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Discord notification
 # ---------------------------------------------------------------------------
@@ -779,3 +801,35 @@ def notify(alert: TradeAlert, plan: PositionPlan) -> None:
     send_slack(alert, plan)
     send_discord(alert, plan)
     send_webhook(alert, plan)
+
+import os
+from google import genai
+from dotenv import load_dotenv
+
+load_dotenv()
+
+def synthesize_with_gemini(symbol: str, signal_data: dict) -> str:
+    """Uses Gemini 2.5 Flash to evaluate equity setups before Telegram dispatch."""
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_key:
+        return ""
+
+    try:
+        client = genai.Client(api_key=gemini_key)
+        prompt = f"""
+        You are an expert Equity Swing and Intraday Trader.
+        Evaluate this algorithmic signal:
+        - Symbol: {symbol}
+        - Metrics & Setup: {signal_data}
+
+        Provide a 2-sentence actionable verdict for Telegram:
+        1. State clearly: [HIGH CONVICTION / SPECULATIVE / AVOID]
+        2. Key risk factor (e.g. invalidation level or index market regime drag).
+        """
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
+        return f"\n\n🤖 *Gemini AI Verdict:*\n{response.text.strip()}"
+    except Exception as e:
+        return f"\n\n*(Gemini synthesis unavailable: {e})*"
