@@ -34,7 +34,11 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          DB_PATH: ${{ secrets.DB_PATH }}
+          SIGNAL_THRESHOLD: ${{ secrets.SIGNAL_THRESHOLD }}
           TIMEZONE: "Asia/Kolkata"
-run: |
+        run: |
           python cli.py scan
           python cli.py eod
