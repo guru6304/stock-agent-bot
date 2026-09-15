@@ -1,0 +1,40 @@
+name: Market Hours Trading Scanner
+
+on:
+  schedule:
+    # 03:45 UTC = 09:15 AM IST (Runs Monday through Friday)
+    - cron: '45 3 * * 1-5'
+    # 06:30 UTC = 12:00 PM IST (Midday Scan)
+    - cron: '30 6 * * 1-5'
+    # 10:05 UTC = 15:35 PM IST (End-of-Day Report)
+    - cron: '05 10 * * 1-5'
+  workflow_dispatch: # Allows triggering the scan manually anytime from GitHub UI
+
+jobs:
+  run-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install google-genai
+
+      - name: Run Market Scan / EOD Report
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TIMEZONE: "Asia/Kolkata"
+        run: |
+          python cli.py scan --symbols RELIANCE.NS,TATAMOTORS.NS,INFY.NS,HDFCBANK.NS --notify
+          python cli.py eod --save --send
