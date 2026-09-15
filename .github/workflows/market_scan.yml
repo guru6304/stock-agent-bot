@@ -35,6 +35,6 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TIMEZONE: "Asia/Kolkata"
-        run: |
-          python cli.py scan --symbols RELIANCE.NS,TATAMOTORS.NS,INFY.NS,HDFCBANK.NS --notify
-          python cli.py eod --save --send
+run: |
+          python cli.py scan
+          python cli.py eod
