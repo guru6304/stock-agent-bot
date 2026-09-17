@@ -1154,12 +1154,58 @@ def cmd_help(args=""):
         "/ibsync    — Sync from IB\n"
         "/alerts    — Price alerts\n"
         "\n"
+        "INDIAN PAPER SIGNALS\n"
+        "/indiascan — Live dynamic scan of Indian market (NSE)\n"
+        "/indiaregime — Indian market regime (Nifty 50 & India VIX)\n"
+        "\n"
         "Tip: Type a ticker (e.g. NVDA) to analyze it.\n"
         "All alerts include grade, logic, risk, and options play."
     )
 
 
+def cmd_indiascan(args=""):
+    """Trigger a live/paper dynamic scan of the Indian market."""
+    try:
+        from indian_scanner_runner import IndianMarketScannerRunner
+        runner = IndianMarketScannerRunner()
+        limit = 30
+        if args.strip().isdigit():
+            limit = int(args.strip())
+        summary = runner.run_cycle(limit=limit, force=True, dry_run=False)
+        return (
+            f"🇮🇳 *Indian Market Scan Completed:*\n"
+            f"• Scanned: {summary.get('instruments_scanned', 0)} dynamically discovered instruments\n"
+            f"• Signals Generated: {summary.get('signals_generated', 0)}\n"
+            f"• Dispatched to Telegram: {summary.get('signals_emitted', 0)}\n"
+            f"• Regime: {summary.get('market_regime', {}).get('regime', 'N/A')}\n"
+            f"• Data Source: {'Live SmartAPI' if summary.get('data_source_live_ready') else 'Research (yfinance)'}"
+        )
+    except Exception as e:
+        return f"Indian scan failed: {e}"
+
+
+def cmd_indiaregime(args=""):
+    """Current Indian market regime using Nifty 50 & India VIX."""
+    try:
+        from indian_market_regime import detect_indian_market_regime
+        res = detect_indian_market_regime()
+        nifty = f"₹{res.nifty_price:,.2f}" if res.nifty_price else "N/A"
+        vix = f"{res.india_vix:.2f}" if res.india_vix else "N/A"
+        return (
+            f"🇮🇳 *Indian Market Regime:*\n"
+            f"• Regime: *{res.regime}* (Confidence: {res.confidence}%)\n"
+            f"• Nifty 50: *{nifty}*\n"
+            f"• India VIX: *{vix}*\n"
+            f"• Details: {res.description}\n"
+            f"• As of: {res.timestamp_ist}"
+        )
+    except Exception as e:
+        return f"Error detecting Indian market regime: {e}"
+
+
 COMMANDS = {
+    "/indiascan": cmd_indiascan,
+    "/indiaregime": cmd_indiaregime,
     "/status": cmd_status,
     "/positions": cmd_positions,
     "/pos": cmd_positions,

@@ -24,7 +24,6 @@ LOG=logging.getLogger("nse-engine"); HTTP=requests.Session()
 HTTP.headers.update({"User-Agent":"Mozilla/5.0 (NSE Stock Recommendation Engine)"})
 NSE_CSV="https://archives.nseindia.com/content/indices/ind_nifty50list.csv"
 SCRIP_MASTER="https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
-FALLBACK=("RELIANCE","HDFCBANK","ICICIBANK","TCS","INFY","SBIN","BHARTIARTL","LT","ITC","TATAMOTORS")
 SIGNAL_LOG=Path(os.getenv("SIGNAL_LOG","logs/nse_signals.jsonl"))
 def env(k:str)->str:return os.getenv(k,"").strip()
 def symbol(x:str)->str:return x.upper().strip().replace(".NS","").replace("-EQ","")
@@ -43,7 +42,14 @@ def watchlist()->list[str]:
         out=[symbol(row.get("Symbol", "")) for row in csv.DictReader(io.StringIO(r.text))]
         if any(out): return [x for x in out if x]
     except (requests.RequestException,csv.Error) as e: LOG.warning("NSE constituent list unavailable: %s",e)
-    return list(FALLBACK)
+    # Dynamic discovery from Scrip Master instead of hardcoded symbols
+    try:
+        from instrument_discovery import DynamicInstrumentDiscovery
+        disc = DynamicInstrumentDiscovery()
+        return [inst.symbol for inst in disc.get_equity_universe(limit=50)]
+    except Exception as e:
+        LOG.error("Dynamic discovery failed: %s", e)
+        return []
 
 class Angel:
     """SmartAPI authentication and LTP source; failures deliberately fall back."""

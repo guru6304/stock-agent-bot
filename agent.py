@@ -243,6 +243,17 @@ def scan_ticker(ticker: str, sector: str = "Technology", paper_mode: bool = Fals
 
 def run_scan(paper_mode: bool = False) -> None:
     """Scan the entire watchlist."""
+    if os.getenv("TIMEZONE") == "Asia/Kolkata" or os.getenv("MARKET", "").upper() == "INDIA":
+        logger.info("Executing Dynamic Indian Market Scanner (NSE / BSE)...")
+        try:
+            from indian_scanner_runner import IndianMarketScannerRunner
+            runner = IndianMarketScannerRunner()
+            runner.run_cycle(force=True)
+            return
+        except Exception as e:
+            logger.error("Indian market scan failed: %s", e, exc_info=True)
+            return
+
     global _data_cache
     _data_cache = {}  # Clear cache for each scan cycle
     mode_label = "PAPER TRADING" if paper_mode else "STOCK AGENT"
@@ -632,7 +643,18 @@ def main():
         "--briefing", action="store_true",
         help="Send daily briefing and exit",
     )
+    parser.add_argument(
+        "--india", action="store_true",
+        help="Run dynamic Indian market scanner (NSE / BSE)",
+    )
     args = parser.parse_args()
+
+    if args.india:
+        logger.info("Executing Dynamic Indian Market Scanner...")
+        from indian_scanner_runner import IndianMarketScannerRunner
+        runner = IndianMarketScannerRunner()
+        runner.run_cycle(force=True)
+        return
 
     # Ensure logs directory exists
     os.makedirs("logs", exist_ok=True)
