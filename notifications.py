@@ -803,7 +803,10 @@ def notify(alert: TradeAlert, plan: PositionPlan) -> None:
     send_webhook(alert, plan)
 
 import os
-from google import genai
+try:
+    from google import genai
+except (ImportError, AttributeError):
+    genai = None
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -811,7 +814,7 @@ load_dotenv()
 def synthesize_with_gemini(symbol: str, signal_data: dict) -> str:
     """Uses Gemini 2.5 Flash to evaluate equity setups before Telegram dispatch."""
     gemini_key = os.getenv("GEMINI_API_KEY")
-    if not gemini_key:
+    if not gemini_key or not genai:
         return ""
 
     try:

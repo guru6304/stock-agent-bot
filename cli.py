@@ -175,6 +175,8 @@ def main():
     command=sys.argv[1].lower() if len(sys.argv)>1 else "scan"
     if command=="scan":scan()
     elif command=="briefing":briefing()
-    elif command=="eod":eod()
-    else:raise SystemExit("Usage: python cli.py [scan|briefing|eod]")
+    elif command in ("dashboard", "web", "server"):
+        import web_server
+        web_server.main()
+    else:raise SystemExit("Usage: python cli.py [scan|briefing|eod|dashboard]")
 if __name__=="__main__":main()
