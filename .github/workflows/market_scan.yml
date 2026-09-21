@@ -39,6 +39,9 @@ jobs:
           DB_PATH: ${{ secrets.DB_PATH }}
           SIGNAL_THRESHOLD: ${{ secrets.SIGNAL_THRESHOLD }}
           TIMEZONE: "Asia/Kolkata"
+          MARKET: "INDIA"
+          CURRENCY_SYMBOL: "₹"
+          USE_DYNAMIC_WATCHLIST: "1"
         run: |
           python cli.py scan
           python cli.py eod

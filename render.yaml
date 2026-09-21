@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: stock-agent-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python web_server.py
+    healthCheckPath: /health
+    envVars:
+      - key: MARKET
+        value: INDIA
+      - key: TIMEZONE
+        value: Asia/Kolkata
+      - key: CURRENCY_SYMBOL
+        value: "₹"
+      - key: INITIAL_CAPITAL
+        value: "1000000"
+      - key: USE_SQLITE
+        value: "1"
+      - key: USE_DYNAMIC_WATCHLIST
+        value: "1"
+      - key: RUN_INTERVAL_MINUTES
+        value: "15"
+      - key: BRIEFING_AUTO_SEND
+        value: "1"
+      - key: PYTHON_VERSION
+        value: "3.11.9"

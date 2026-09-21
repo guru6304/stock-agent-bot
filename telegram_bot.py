@@ -1435,15 +1435,18 @@ def _message_worker() -> None:
 
 def run_bot():
     """Main bot loop — long polls for messages."""
-    if not TOKEN:
-        print("ERROR: TELEGRAM_BOT_TOKEN not set in .env")
-        print("1. Message @BotFather on Telegram")
-        print("2. Send /newbot and follow instructions")
-        print("3. Copy the token to .env")
-        sys.exit(1)
+    global TOKEN, CHAT_ID
+    while not TOKEN:
+        TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+        if TOKEN:
+            break
+        logger.warning("TELEGRAM_BOT_TOKEN not set — waiting for token in environment...")
+        time.sleep(15)
 
     if not CHAT_ID:
-        print("WARNING: TELEGRAM_CHAT_ID not set — bot will respond to anyone")
+        CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+        if not CHAT_ID:
+            logger.warning("TELEGRAM_CHAT_ID not set — bot will respond to anyone")
         print("Run: python3 telegram_bot.py --get-chat-id")
 
     print("Stock Agent Telegram Bot starting...")
