@@ -9,9 +9,13 @@ just "buy / don't buy / wait" with the reasoning in simple terms.
 
 import json
 import logging
+import os
 import re
 from pathlib import Path
 from typing import Optional
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +26,11 @@ PORTFOLIO_FILE = Path("portfolio.json")
 # Ticker extraction from natural language
 # ---------------------------------------------------------------------------
 
+def is_indian_market() -> bool:
+    return os.getenv("MARKET", "").upper() == "INDIA" or os.getenv("TIMEZONE") == "Asia/Kolkata"
+
+CURRENCY = "₹" if is_indian_market() else "$"
+
 # Common tickers that might appear in questions
 KNOWN_TICKERS = set()
 
@@ -29,15 +38,31 @@ def _load_known_tickers():
     global KNOWN_TICKERS
     try:
         if PORTFOLIO_FILE.exists():
-            p = json.load(open(PORTFOLIO_FILE))
-            KNOWN_TICKERS = set(h["ticker"] for h in p.get("holdings", []))
+            p = json.loads(PORTFOLIO_FILE.read_text(encoding="utf-8"))
+            KNOWN_TICKERS.update(h["ticker"] for h in p.get("holdings", []))
     except Exception:
         pass
-    # Add common tickers people ask about
-    KNOWN_TICKERS.update([
-        "AAPL", "MSFT", "GOOG", "GOOGL", "AMZN", "META", "NVDA", "TSLA",
-        "SPY", "QQQ", "NFLX", "AVGO", "AMD", "CRM", "ADBE", "INTC",
-    ])
+    try:
+        import data_layer
+        wl = data_layer.load_watchlist()
+        KNOWN_TICKERS.update(w["ticker"] for w in wl)
+    except Exception:
+        pass
+    if is_indian_market():
+        KNOWN_TICKERS.update([
+            "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "BHARTIARTL",
+            "SBIN", "ITC", "LT", "TATAMOTORS", "BAJFINANCE", "MARUTI",
+            "SUNPHARMA", "TITAN", "AXISBANK", "NTPC", "ONGC", "TATASTEEL",
+            "KOTAKBANK", "HINDUNILVR", "WIPRO", "HCLTECH", "POWERGRID",
+            "ULTRACEMCO", "COALINDIA", "BAJAJFINSV", "NESTLEIND", "ASIANPAINT",
+            "ADANIENT", "ADANIPORTS", "JSWSTEEL", "GRASIM", "TECHM", "CIPLA", "DRREDDY",
+            "NIFTY", "BANKNIFTY"
+        ])
+    else:
+        KNOWN_TICKERS.update([
+            "AAPL", "MSFT", "GOOG", "GOOGL", "AMZN", "META", "NVDA", "TSLA",
+            "SPY", "QQQ", "NFLX", "AVGO", "AMD", "CRM", "ADBE", "INTC",
+        ])
 
 _load_known_tickers()
 
@@ -46,15 +71,13 @@ def extract_ticker(text: str) -> Optional[str]:
     """Extract a stock ticker from natural language text."""
     upper = text.upper()
 
-    # Direct mention of a ticker (1-5 uppercase letters)
-    # Check known tickers first
-    for ticker in KNOWN_TICKERS:
-        # Match as a whole word
+    # Check known tickers first (longer symbols first)
+    for ticker in sorted(KNOWN_TICKERS, key=len, reverse=True):
         if re.search(r'\b' + re.escape(ticker) + r'\b', upper):
             return ticker
 
-    # Try to find any 1-5 letter word that looks like a ticker
-    words = re.findall(r'\b([A-Z]{1,5})\b', upper)
+    # Try to find any 2-15 letter/alphanumeric word that looks like a ticker
+    words = re.findall(r'\b([A-Z0-9_\-\&]{2,15})\b', upper)
     # Filter out common English words
     stop_words = {
         "I", "A", "AM", "AN", "AS", "AT", "BE", "BY", "DO", "GO", "IF",
@@ -66,15 +89,21 @@ def extract_ticker(text: str) -> Optional[str]:
         "YES", "YET", "YOU", "ALL", "ANY", "BIG", "BUY", "DAY", "END",
         "FAR", "FEW", "GOD", "GUY", "HIT", "HOT", "JOB", "KID", "LOT",
         "MAN", "MEN", "RAN", "RED", "RUN", "SET", "SIT", "TEN", "TOP",
-        "TRY", "TWO", "WAR", "WIN", "WON", "YET", "WHAT", "WHEN",
+        "TRY", "TWO", "WAR", "WIN", "WON", "WHAT", "WHEN", "WHICH", "WHERE",
         "WILL", "WITH", "THAT", "THIS", "THEY", "THAN", "THEM", "THEN",
         "FROM", "HAVE", "BEEN", "WERE", "SAID", "EACH", "MUCH", "GOOD",
         "VERY", "JUST", "OVER", "SUCH", "SELL", "HOLD", "WAIT", "LONG",
         "SHORT", "ABOUT", "THINK", "SHOULD", "COULD", "WOULD", "STOCK",
-        "MARKET", "TRADE", "PRICE", "VALUE", "MONEY", "RISK", "SAFE",
-        "HIGH", "DOWN", "LIKE", "KEEP", "WANT", "NEED", "KNOW", "TELL",
-        "HELP", "MAKE", "TAKE", "GIVE", "COME", "LOOK", "FIND", "CALL",
-        "EXPLAIN", "UNDERSTAND", "STRATEGY", "OPTIONS", "GRADE",
+        "STOCKS", "SHARE", "SHARES", "EQUITY", "EQUITIES",
+        "MARKET", "MARKETS", "TRADE", "TRADES", "TRADING", "PRICE", "VALUE",
+        "MONEY", "RISK", "SAFE", "HIGH", "DOWN", "LIKE", "KEEP", "WANT",
+        "NEED", "KNOW", "TELL", "HELP", "MAKE", "TAKE", "GIVE", "COME",
+        "LOOK", "FIND", "CALL", "EXPLAIN", "UNDERSTAND", "STRATEGY", "OPTIONS",
+        "GRADE", "TODAY", "TOMORROW", "YESTERDAY", "RECOMMEND", "RECOMMENDATION",
+        "RECOMMENDATIONS", "SUGGEST", "SUGGESTION", "SUGGESTIONS", "BEST", "WORST",
+        "PICK", "PICKS", "SCAN", "SECTOR", "SHOW", "LIST", "CHECK", "PLEASE",
+        "PORTFOLIO", "POSITION", "POSITIONS", "HOLDING", "HOLDINGS", "OPPORTUNITY",
+        "OPPORTUNITIES", "INVEST", "INVESTMENT", "INVESTING",
     }
     for w in words:
         if w not in stop_words and len(w) >= 2:
@@ -250,7 +279,7 @@ def advise_decision(ticker: str, analysis: dict) -> str:
         lines.append("%s — NO CLEAR SIGNAL right now." % ticker)
         lines.append("")
         if tech:
-            lines.append("The stock is at $%.2f." % tech.current_price)
+            lines.append("The stock is at %s%.2f." % (CURRENCY, tech.current_price))
             if tech.rsi < 30:
                 lines.append("It's oversold (RSI %.0f) which could mean a bounce is coming, but there's no confirmed reversal yet." % tech.rsi)
             elif tech.rsi > 70:
@@ -324,8 +353,8 @@ def advise_decision(ticker: str, analysis: dict) -> str:
     # Add key numbers
     if tech:
         lines.append("")
-        lines.append("Price: $%.2f | RSI: %.0f | Fundamental: %d/15" % (
-            tech.current_price, tech.rsi,
+        lines.append("Price: %s%.2f | RSI: %.0f | Fundamental: %d/15" % (
+            CURRENCY, tech.current_price, tech.rsi,
             fund.fundamental_score if fund else 0))
 
     # If they hold it, show their P&L
@@ -334,18 +363,18 @@ def advise_decision(ticker: str, analysis: dict) -> str:
         pnl_pct = float(holding.get("pnl_pct", 0))
         avg = float(holding.get("avg_price", 0))
         lines.append("")
-        lines.append("Your position: %d shares @ $%.2f avg" % (
-            holding.get("shares", 0), avg))
-        lines.append("P&L: ${:+,.0f} ({:+.1f}%)".format(pnl, pnl_pct))
+        lines.append("Your position: %d shares @ %s%.2f avg" % (
+            holding.get("shares", 0), CURRENCY, avg))
+        lines.append(f"P&L: {CURRENCY}{pnl:+,.0f} ({pnl_pct:+.1f}%)")
 
     # Entry plan if it's a buy
     if direction == "BUY" and plan and grade_score >= 50:
         lines.append("")
         lines.append("If you decide to buy:")
-        lines.append("  Entry: $%.2f" % plan.entry_price)
-        lines.append("  Stop loss: $%.2f (exit if it drops here)" % plan.stop_loss)
-        lines.append("  Target: $%.2f (take profit here)" % plan.target_1)
-        lines.append("  Max risk: $%.0f" % plan.max_loss)
+        lines.append("  Entry: %s%.2f" % (CURRENCY, plan.entry_price))
+        lines.append("  Stop loss: %s%.2f (exit if it drops here)" % (CURRENCY, plan.stop_loss))
+        lines.append("  Target: %s%.2f (take profit here)" % (CURRENCY, plan.target_1))
+        lines.append("  Max risk: %s%.0f" % (CURRENCY, plan.max_loss))
 
     return "\n".join(lines)
 
@@ -366,7 +395,7 @@ def advise_explain(ticker: str, analysis: dict) -> str:
 
     if tech:
         # Price context
-        lines.append("PRICE: $%.2f" % tech.current_price)
+        lines.append("PRICE: %s%.2f" % (CURRENCY, tech.current_price))
         if getattr(tech, "pct_from_52w_high", 0):
             lines.append("  %.0f%% below its 52-week high" % abs(tech.pct_from_52w_high))
 
@@ -494,14 +523,14 @@ def advise_risk(ticker: str, analysis: dict) -> str:
             lines.append("🔴 You're down %.0f%% — consider if your thesis still holds" % abs(pnl_pct))
         cost = float(holding.get("cost_basis", 0))
         lines.append("")
-        lines.append("Your cost basis: $%.0f" % cost)
-        lines.append("If it drops 10%% more: you'd lose another ~$%.0f" % (cost * 0.10))
+        lines.append("Your cost basis: %s%.0f" % (CURRENCY, cost))
+        lines.append("If it drops 10%% more: you'd lose another ~%s%.0f" % (CURRENCY, cost * 0.10))
 
     if plan:
         lines.append("")
         lines.append("If entering now:")
-        lines.append("  Stop loss at: $%.2f" % plan.stop_loss)
-        lines.append("  Max you'd lose: $%.0f per position" % plan.max_loss)
+        lines.append("  Stop loss at: %s%.2f" % (CURRENCY, plan.stop_loss))
+        lines.append("  Max you'd lose: %s%.0f per position" % (CURRENCY, plan.max_loss))
 
     if not lines[2:]:  # No real risks found
         lines.append("No specific risk flags detected — but always use a stop loss!")
@@ -556,11 +585,11 @@ def advise_options_simple(ticker: str, analysis: dict) -> str:
     prob = opts.get("probability_of_profit", 0)
 
     if max_profit:
-        lines.append("Max you can make: $%.0f per contract" % (max_profit * 100 if max_profit < 50 else max_profit))
+        lines.append("Max you can make: %s%.0f per contract" % (CURRENCY, max_profit * 100 if max_profit < 50 else max_profit))
     if max_loss:
-        lines.append("Max you can lose: $%.0f per contract" % (abs(max_loss) * 100 if abs(max_loss) < 50 else abs(max_loss)))
+        lines.append("Max you can lose: %s%.0f per contract" % (CURRENCY, abs(max_loss) * 100 if abs(max_loss) < 50 else abs(max_loss)))
     if breakeven:
-        lines.append("Breakeven price: $%.2f" % breakeven)
+        lines.append("Breakeven price: %s%.2f" % (CURRENCY, breakeven))
     if prob:
         lines.append("Estimated win rate: ~%d%%" % prob)
 
@@ -574,7 +603,7 @@ def advise_options_simple(ticker: str, analysis: dict) -> str:
             opt_type = leg.get("type", "?")
             strike = leg.get("strike", 0)
             premium = leg.get("premium", 0)
-            lines.append("  %s %s $%.0f strike @ $%.2f" % (action, opt_type, strike, premium))
+            lines.append("  %s %s %s%.0f strike @ %s%.2f" % (action, opt_type, CURRENCY, strike, CURRENCY, premium))
 
     lines.append("")
     lines.append("Expiry: %s" % opts.get("legs", [{}])[0].get("expiry", "N/A"))
@@ -595,7 +624,7 @@ def advise_update(ticker: str, analysis: dict) -> str:
     lines.append("")
 
     if tech:
-        lines.append("Price: $%.2f" % tech.current_price)
+        lines.append("Price: %s%.2f" % (CURRENCY, tech.current_price))
         lines.append("RSI: %.0f | MACD: %.2f" % (tech.rsi, tech.macd_value))
 
         if tech.price_above_200sma:
@@ -612,7 +641,7 @@ def advise_update(ticker: str, analysis: dict) -> str:
         pnl = float(holding.get("unrealized_pnl", 0))
         pnl_pct = float(holding.get("pnl_pct", 0))
         lines.append("")
-        lines.append("Your P&L: ${:+,.0f} ({:+.1f}%)".format(pnl, pnl_pct))
+        lines.append(f"Your P&L: {CURRENCY}{pnl:+,.0f} ({pnl_pct:+.1f}%)")
 
     if fund:
         lines.append("Fundamental score: %d/15" % fund.fundamental_score)
@@ -893,7 +922,8 @@ def answer_question(text: str) -> str:
                 from telegram_bot import cmd_buy
                 return "Let me scan for opportunities...\n\n" + cmd_buy()
             except Exception:
-                return "Try /buy to see current opportunities, or ask about a specific stock like 'should I buy TSLA?'"
+                prompt_ex = "should I buy RELIANCE?" if is_indian_market() else "should I buy TSLA?"
+                return f"Try /buy to see current opportunities, or ask about a specific stock like '{prompt_ex}'"
 
         if any(w in lower for w in ["sell", "exit", "close"]):
             try:
@@ -902,13 +932,18 @@ def answer_question(text: str) -> str:
             except Exception:
                 return "Try /sell to check your positions."
 
+        ex1 = "RELIANCE" if is_indian_market() else "TSLA"
+        ex2 = "TCS" if is_indian_market() else "META"
+        ex3 = "HDFCBANK" if is_indian_market() else "NVDA"
+        ex4 = "INFY" if is_indian_market() else "AMZN"
+        ex5 = "NIFTY" if is_indian_market() else "AAPL"
         return ("I'm not sure which stock you're asking about. "
                 "Try asking like:\n\n"
-                "• 'Should I buy TSLA?'\n"
-                "• 'Explain META'\n"
-                "• 'Is NVDA a good investment?'\n"
-                "• 'What's the risk on AMZN?'\n"
-                "• 'Options play for AAPL'\n"
+                f"• 'Should I buy {ex1}?'\n"
+                f"• 'Explain {ex2}'\n"
+                f"• 'Is {ex3} a good investment?'\n"
+                f"• 'What's the risk on {ex4}?'\n"
+                f"• 'Options play for {ex5}'\n"
                 "\nOr type /help for all commands.")
 
     # Run analysis

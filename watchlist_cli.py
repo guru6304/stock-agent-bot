@@ -58,7 +58,9 @@ def cmd_add(args):
 
     # Validate ticker exists
     try:
-        tk = yf.Ticker(ticker)
+        import data_layer
+        resolved = data_layer.resolve_ticker(ticker)
+        tk = yf.Ticker(resolved)
         info = tk.info or {}
         name = info.get("shortName", info.get("longName", ""))
         if not name and not info.get("regularMarketPrice"):

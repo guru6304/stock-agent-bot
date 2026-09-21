@@ -331,7 +331,7 @@ def classify_regime(trend, volatility, breadth):
 
 def detect_regime(spy_data=None, vix_data=None):
     # type: (Optional[pd.DataFrame], Optional[pd.DataFrame]) -> Dict
-    """Detect current market regime.
+    """Detect current market regime (supports Nifty 50 & India VIX for Indian markets).
 
     Args:
         spy_data: OHLCV DataFrame for SPY. If None, fetches automatically.
@@ -340,6 +340,32 @@ def detect_regime(spy_data=None, vix_data=None):
     Returns:
         Dict with regime classification and strategy adjustments.
     """
+    if spy_data is None and vix_data is None and (os.getenv("MARKET", "").upper() == "INDIA" or os.getenv("TIMEZONE") == "Asia/Kolkata"):
+        try:
+            from indian_market_regime import detect_indian_market_regime
+            ind = detect_indian_market_regime()
+            base_params = REGIME_PARAMS.get(ind.regime, REGIME_PARAMS["NEUTRAL"])
+            params = dict(base_params)
+            params["threshold_adjustment"] = ind.threshold_adjustment
+            params["description"] = ind.description
+            res = {
+                "regime": ind.regime,
+                "confidence": ind.confidence,
+                "description": ind.description,
+                "params": params,
+                "details": {
+                    "benchmark": ind.benchmark_symbol,
+                    "price": ind.nifty_price,
+                    "vix": ind.india_vix,
+                    "timestamp": ind.timestamp_ist,
+                },
+                "timestamp": ind.timestamp_ist,
+            }
+            _save_regime(res)
+            return res
+        except Exception as e:
+            logger.warning("Indian market regime detection failed, falling back: %s", e)
+
     if spy_data is None:
         try:
             import yfinance as yf

@@ -347,6 +347,40 @@ class TestIndianMarketSuite(unittest.TestCase):
         self.assertFalse(res.benchmark_verified)
         self.assertIn("unavailable", res.blocker)
 
+    def test_ticker_resolution_and_screener_universe(self):
+        import data_layer
+        import screener
+        self.assertTrue(data_layer.is_indian_market())
+        self.assertEqual(data_layer.resolve_ticker("RELIANCE"), "RELIANCE.NS")
+        self.assertEqual(data_layer.resolve_ticker("TCS"), "TCS.NS")
+        self.assertEqual(data_layer.resolve_ticker("^NSEI"), "^NSEI")
+
+        universe = screener.get_universe("default")
+        self.assertIn("TCS", universe)
+        self.assertNotIn("AAPL", universe)
+        self.assertNotIn("TSLA", universe)
+        self.assertTrue(len(universe) >= 20)
+
+    def test_trade_advisor_ticker_extraction(self):
+        import trade_advisor
+        self.assertIsNone(trade_advisor.extract_ticker("Which stock should I buy?"))
+        self.assertIsNone(trade_advisor.extract_ticker("What are the best stocks today?"))
+        self.assertEqual(trade_advisor.extract_ticker("Should I buy RELIANCE?"), "RELIANCE")
+        self.assertEqual(trade_advisor.extract_ticker("Check HDFCBANK target"), "HDFCBANK")
+        self.assertEqual(trade_advisor.extract_ticker("TATAMOTORS swing"), "TATAMOTORS")
+
+    def test_telegram_bot_indian_routing(self):
+        import telegram_bot
+        self.assertTrue(telegram_bot.is_indian_market())
+        self.assertEqual(telegram_bot.get_currency_symbol(), "₹")
+
+        help_text = telegram_bot.cmd_help()
+        self.assertIn("RELIANCE", help_text)
+        self.assertNotIn("TSLA", help_text)
+
+        status_text = telegram_bot.cmd_status()
+        self.assertIn("₹", status_text)
+
 
 if __name__ == "__main__":
     unittest.main()

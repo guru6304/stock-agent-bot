@@ -34,10 +34,14 @@ def _make_analyzed(ticker="TEST", n=210, **kwargs):
 
 class TestUniverses(unittest.TestCase):
     def test_default_universe(self):
-        """Default universe should have 60 tickers."""
+        """Default universe should be dynamic based on market."""
         tickers = screener.get_universe("default")
-        self.assertEqual(len(tickers), len(screener.DEFAULT_UNIVERSE))
-        self.assertIn("AAPL", tickers)
+        if screener.is_indian_market():
+            self.assertTrue(len(tickers) >= 20)
+            self.assertNotIn("AAPL", tickers)
+        else:
+            self.assertEqual(len(tickers), len(screener.DEFAULT_UNIVERSE))
+            self.assertIn("AAPL", tickers)
 
     def test_sectors_universe(self):
         """Sectors universe should return ETFs."""
@@ -47,7 +51,8 @@ class TestUniverses(unittest.TestCase):
     def test_unknown_universe_falls_back(self):
         """Unknown universe name should fall back to default."""
         tickers = screener.get_universe("nonexistent")
-        self.assertEqual(len(tickers), len(screener.DEFAULT_UNIVERSE))
+        default_tickers = screener.get_universe("default")
+        self.assertEqual(len(tickers), len(default_tickers))
 
 
 class TestScreenFunctions(unittest.TestCase):

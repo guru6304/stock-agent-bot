@@ -81,7 +81,8 @@ def fetch_options_data(ticker: str) -> dict:
     }
 
     try:
-        stock = yf.Ticker(ticker)
+        from data_layer import resolve_ticker
+        stock = yf.Ticker(resolve_ticker(ticker))
     except Exception as exc:
         logger.error("Failed to create Ticker object for %s: %s", ticker, exc)
         empty_result["error"] = str(exc)

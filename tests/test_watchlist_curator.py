@@ -4,6 +4,7 @@ import csv
 import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import watchlist_curator
@@ -99,12 +100,13 @@ class TestSuggestRemovals(unittest.TestCase):
 
     def test_no_removal_for_healthy_ticker(self):
         watchlist = [{"ticker": "AAPL", "sector": "Technology"}]
+        recent_date = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d")
         trade_history = {
             "AAPL": [
-                {"pnl": 100, "exit_date": "2026-03-20"},
+                {"pnl": 100, "exit_date": recent_date},
             ]
         }
-        alert_dates = {"AAPL": "2026-03-25T10:00:00"}
+        alert_dates = {"AAPL": (datetime.now() - timedelta(days=2)).isoformat()}
         suggestions = watchlist_curator.suggest_removals(
             watchlist, trade_history, alert_dates, {}, max_losses=3
         )

@@ -231,8 +231,8 @@ CREATE TABLE IF NOT EXISTS portfolio (
 -- Portfolio config (single row)
 CREATE TABLE IF NOT EXISTS portfolio_config (
     id INTEGER PRIMARY KEY CHECK (id = 1),
-    total_portfolio_value REAL DEFAULT 50000,
-    available_cash REAL DEFAULT 10000,
+    total_portfolio_value REAL DEFAULT 1000000,
+    available_cash REAL DEFAULT 1000000,
     max_risk_per_trade_pct REAL DEFAULT 1.0,
     max_position_size_pct REAL DEFAULT 10.0,
     last_updated TEXT DEFAULT (datetime('now'))
@@ -426,7 +426,7 @@ def update_paper_cash(cash: float) -> None:
         )
 
 
-def reset_paper_state(starting_capital: float = 100000) -> None:
+def reset_paper_state(starting_capital: float = 1000000) -> None:
     """Reset paper trading to clean state."""
     with get_connection() as conn:
         conn.execute("DELETE FROM paper_positions")

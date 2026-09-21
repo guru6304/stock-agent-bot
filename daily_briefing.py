@@ -25,6 +25,14 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+def is_indian_market() -> bool:
+    return os.getenv("MARKET", "").upper() == "INDIA" or os.getenv("TIMEZONE") == "Asia/Kolkata"
+
+
+def get_currency_symbol() -> str:
+    return "₹" if is_indian_market() else "$"
+
+
 def get_portfolio_summary():
     # type: () -> Dict
     """Get real portfolio summary from portfolio.json (IB-synced)."""
@@ -111,6 +119,18 @@ def get_regime_summary():
     # type: () -> Dict
     """Get current market regime info."""
     try:
+        if is_indian_market():
+            from indian_market_regime import detect_indian_market_regime
+            res = detect_indian_market_regime()
+            nifty = f"₹{res.nifty_price:,.2f}" if res.nifty_price else "N/A"
+            vix = f"{res.india_vix:.2f}" if res.india_vix else "N/A"
+            return {
+                "regime": res.regime,
+                "confidence": res.confidence,
+                "description": f"Nifty 50: {nifty} | India VIX: {vix} | {res.description}",
+                "threshold_adj": 0,
+                "position_mult": 1.0,
+            }
         import market_regime
         history = market_regime.get_history(1)
         if history:
@@ -181,7 +201,8 @@ def get_top_movers():
         movers = []
         for ticker in tickers:
             try:
-                t = yf.Ticker(ticker)
+                resolved = data_layer.resolve_ticker(ticker)
+                t = yf.Ticker(resolved)
                 info = t.fast_info
                 price = getattr(info, "last_price", None) or 0
                 prev = getattr(info, "previous_close", None) or 0
@@ -204,17 +225,14 @@ def get_top_movers():
 
 def generate_briefing():
     # type: () -> Dict
-    """Generate complete daily briefing.
-
-    Returns dict with all sections of the briefing.
-    """
+    """Generate complete briefing dictionary."""
     return {
         "date": datetime.now().strftime("%Y-%m-%d"),
         "time": datetime.now().strftime("%H:%M"),
+        "regime": get_regime_summary(),
         "portfolio": get_portfolio_summary(),
         "positions": get_position_details(),
         "top_movers": get_top_movers(),
-        "regime": get_regime_summary(),
         "risk": get_risk_snapshot(),
         "pending_reviews": get_journal_pending(),
     }
@@ -223,6 +241,7 @@ def generate_briefing():
 def format_briefing(briefing):
     # type: (Dict) -> str
     """Format briefing dict into readable text."""
+    cur = get_currency_symbol()
     lines = []
     lines.append("☀️ DAILY BRIEFING — %s" % briefing["date"])
     lines.append("=" * 40)
@@ -241,13 +260,11 @@ def format_briefing(briefing):
     if port:
         lines.append("\n📊 PORTFOLIO")
         lines.append("  " + "-" * 50)
-        lines.append("  Total Value:  $%s" % "{:,.2f}".format(port.get("total_equity", 0)))
-        lines.append("  Cash:         $%s" % "{:,.2f}".format(port.get("cash", 0)))
-        lines.append("  Unrealized:   $%s" % "{:+,.2f}".format(port.get("unrealized_pnl", 0)))
-        lines.append("  Realized YTD: $%s" % "{:+,.2f}".format(port.get("realized_pnl", 0)))
-        lines.append("  Combined P&L: $%s (%+.1f%%)" % (
-            "{:+,.2f}".format(port.get("total_pnl", 0)),
-            port.get("total_return_pct", 0)))
+        lines.append(f"  Total Value:  {cur}{port.get('total_equity', 0):,.2f}")
+        lines.append(f"  Cash:         {cur}{port.get('cash', 0):,.2f}")
+        lines.append(f"  Unrealized:   {cur}{port.get('unrealized_pnl', 0):+,.2f}")
+        lines.append(f"  Realized YTD: {cur}{port.get('realized_pnl', 0):+,.2f}")
+        lines.append(f"  Combined P&L: {cur}{port.get('total_pnl', 0):+,.2f} ({port.get('total_return_pct', 0):+.1f}%)")
         lines.append("  Positions:    %d holdings  |  %d closed trades YTD" % (
             port.get("open_positions", 0), port.get("total_trades", 0)))
         if port.get("broker"):
@@ -267,16 +284,12 @@ def format_briefing(briefing):
         if winners:
             lines.append("  🟢 WINNERS:")
             for p in winners:
-                lines.append("  %-5s  %d shares  avg $%.2f → $%.2f  +$%s (%+.1f%%)" % (
-                    p["ticker"], p["shares"], p["entry_price"], p["current_price"],
-                    "{:,.0f}".format(p["unrealized_pnl"]), p["unrealized_pct"]))
+                lines.append(f"  {p['ticker']:<5}  {p['shares']} shares  avg {cur}{p['entry_price']:.2f} → {cur}{p['current_price']:.2f}  +{cur}{p['unrealized_pnl']:,.0f} ({p['unrealized_pct']:+.1f}%)")
 
         if losers:
             lines.append("  🔴 LOSERS:")
             for p in losers:
-                lines.append("  %-5s  %d shares  avg $%.2f → $%.2f  -$%s (%.1f%%)" % (
-                    p["ticker"], p["shares"], p["entry_price"], p["current_price"],
-                    "{:,.0f}".format(abs(p["unrealized_pnl"])), p["unrealized_pct"]))
+                lines.append(f"  {p['ticker']:<5}  {p['shares']} shares  avg {cur}{p['entry_price']:.2f} → {cur}{p['current_price']:.2f}  -{cur}{abs(p['unrealized_pnl']):,.0f} ({p['unrealized_pct']:.1f}%)")
 
     # Top movers (quick live price check)
     top_movers = briefing.get("top_movers", [])
@@ -285,8 +298,7 @@ def format_briefing(briefing):
         lines.append("  " + "-" * 50)
         for m in top_movers:
             emoji = "🟢" if m["change_pct"] >= 0 else "🔴"
-            lines.append("  %s %-5s  $%.2f  %+.1f%%" % (
-                emoji, m["ticker"], m["price"], m["change_pct"]))
+            lines.append(f"  {emoji} {m['ticker']:<5}  {cur}{m['price']:.2f}  {m['change_pct']:+.1f}%")
 
     # Risk
     risk = briefing.get("risk", {})
@@ -306,8 +318,7 @@ def format_briefing(briefing):
     realized = port.get("realized_pnl", 0)
     if realized != 0:
         emoji = "✅" if realized >= 0 else "⚠️"
-        lines.append("\n%s REALIZED P&L YTD: $%s (%d closed trades)" % (
-            emoji, "{:+,.2f}".format(realized), port.get("total_trades", 0)))
+        lines.append(f"\n{emoji} REALIZED P&L YTD: {cur}{realized:+,.2f} ({port.get('total_trades', 0)} closed trades)")
 
     lines.append("\n" + "=" * 40)
     lines.append("💬 Chat with me anytime — just type a question!")

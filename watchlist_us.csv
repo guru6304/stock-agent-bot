@@ -1,0 +1,37 @@
+ticker,sector,notes
+AMZN,Consumer Discretionary,Amazon - E-commerce and AWS cloud
+AVGO,Technology,Broadcom - Semiconductors and infrastructure software
+BMNR,Technology,BitMine Immersion Technologies - Crypto mining
+CRWD,Technology,CrowdStrike - Cybersecurity endpoint protection
+DELL,Technology,Dell Technologies - PCs servers and storage
+META,Technology,Meta Platforms - Social media and AI
+MP,Materials,MP Materials - Rare earth mining
+NFLX,Communication Services,Netflix - Streaming entertainment
+ONDS,Technology,Ondas Holdings - Wireless infrastructure
+QQQ,ETF,Invesco QQQ Trust - Nasdaq 100 index ETF
+SPY,ETF,SPDR S&P 500 ETF Trust - S&P 500 index ETF
+TSLA,Consumer Discretionary,Tesla - EVs and energy storage
+URA,ETF,Global X Uranium ETF - Uranium miners
+ZETA,Technology,Zeta Global Holdings - Marketing platform AI
+ABBV,Healthcare,AbbVie - Pharma (previously held)
+ASTS,Technology,AST SpaceMobile - Satellite broadband (previously held)
+BIDU,Technology,Baidu - Chinese AI and search (previously held)
+BSOL,Crypto,Bitwise Solana Staking ETF (previously held)
+EOSE,Industrials,Eos Energy - Battery storage (previously held)
+GEV,Industrials,GE Vernova - Power and energy (previously held)
+GME,Consumer Discretionary,GameStop - Retail gaming (previously held)
+HIMS,Healthcare,Hims & Hers Health - Telehealth (previously held)
+HOOD,Financials,Robinhood Markets - Trading platform (previously held)
+IREN,Technology,Iren Ltd - Data center and crypto (previously held)
+MAGS,ETF,Roundhill Magnificent Seven ETF (previously held)
+NBIS,Technology,Nebius Group - AI infrastructure (previously held)
+NTR,Materials,Nutrien - Fertilizer and agriculture (previously held)
+NVO,Healthcare,Novo Nordisk - Diabetes and obesity drugs (previously held)
+OKLO,Industrials,Oklo Inc - Nuclear micro-reactors (previously held)
+RBLX,Technology,Roblox - Gaming platform (previously held)
+RKLB,Industrials,Rocket Lab - Space launch services (previously held)
+SLV,ETF,iShares Silver Trust (previously held)
+SOFI,Financials,SoFi Technologies - Fintech (previously held)
+TMQ,Materials,Trilogy Metals - Copper mining (previously held)
+XLE,ETF,Energy Select Sector SPDR (previously held)
+XPEV,Consumer Discretionary,XPeng - Chinese EV maker (previously held)

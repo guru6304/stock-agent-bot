@@ -19,6 +19,7 @@ Usage:
 
 import argparse
 import logging
+import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional
@@ -58,9 +59,35 @@ DEFAULT_UNIVERSE = [
 ]
 
 
+def is_indian_market() -> bool:
+    return os.getenv("MARKET", "").upper() == "INDIA" or os.getenv("TIMEZONE") == "Asia/Kolkata"
+
+
+DEFAULT_INDIAN_UNIVERSE = [
+    "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK", "BHARTIARTL", "SBIN",
+    "ITC", "LT", "TATAMOTORS", "BAJFINANCE", "KOTAKBANK", "HINDUNILVR", "AXISBANK",
+    "MARUTI", "SUNPHARMA", "TITAN", "ULTRACEMCO", "NTPC", "TATACONSUM", "POWERGRID",
+    "M&M", "ADANIENT", "BAJAJ-AUTO", "COALINDIA", "TATASTEEL", "ASIANPAINT",
+    "JSWSTEEL", "HCLTECH", "WIPRO", "TECHM", "DIVISLAB", "CIPLA", "DRREDDY",
+    "EICHERMOT", "HEROMOTOCO", "GRASIM", "BRITANNIA", "APOLLOHOSP", "INDUSINDBK",
+    "ONGC", "BPCL", "ADANIPORTS", "HINDALCO", "NESTLEIND", "SHRIRAMFIN", "TRENT",
+    "BEL", "HAL", "ZOMATO"
+]
+
+
 def get_universe(name: str, custom_file: Optional[str] = None) -> List[str]:
     """Return a list of tickers for the given universe name."""
     if name == "default":
+        if is_indian_market():
+            try:
+                from instrument_discovery import DynamicInstrumentDiscovery
+                disc = DynamicInstrumentDiscovery()
+                equities = disc.get_equity_universe(limit=50)
+                if equities:
+                    return [inst.symbol for inst in equities]
+            except Exception:
+                pass
+            return DEFAULT_INDIAN_UNIVERSE
         return DEFAULT_UNIVERSE
     elif name == "watchlist":
         wl = data_layer.load_watchlist()
@@ -73,7 +100,7 @@ def get_universe(name: str, custom_file: Optional[str] = None) -> List[str]:
         return _load_custom_tickers(custom_file)
     else:
         logger.warning("Unknown universe '%s', using default", name)
-        return DEFAULT_UNIVERSE
+        return get_universe("default")
 
 
 def _fetch_sp500_tickers() -> List[str]:
@@ -340,9 +367,10 @@ def print_screen_results(results: Dict[str, List[Dict]]) -> None:
         print(f"  {'Ticker':<8} {'Price':>8} {'RSI':>5} {'MFI':>5} {'Score':>5}  {'Details'}")
         print(f"  {'─' * 66}")
 
+        cur = "₹" if is_indian_market() else "$"
         for h in hits:
             print(
-                f"  {h['ticker']:<8} ${h['price']:>7,.2f} {h.get('rsi', 0):>5.1f}"
+                f"  {h['ticker']:<8} {cur}{h['price']:>7,.2f} {h.get('rsi', 0):>5.1f}"
                 f" {h.get('mfi', 0):>5.1f} {h['score']:>5}  {h['details']}"
             )
 

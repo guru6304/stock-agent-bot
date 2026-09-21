@@ -120,6 +120,7 @@ def calculate_technicals(df: pd.DataFrame) -> Optional[dict]:
 
     # Breakout levels
     high_3d = float(high.iloc[-4:-1].max()) if len(high) >= 4 else price
+    low_3d = float(low.iloc[-4:-1].min()) if len(low) >= 4 else price
     high_20d = float(high.iloc[-21:-1].max()) if len(high) >= 21 else price
     low_20d = float(low.iloc[-21:-1].min()) if len(low) >= 21 else price
 
@@ -132,6 +133,7 @@ def calculate_technicals(df: pd.DataFrame) -> Optional[dict]:
         "rsi": rsi,
         "vol_ratio": vol_ratio,
         "high_3d": high_3d,
+        "low_3d": low_3d,
         "high_20d": high_20d,
         "low_20d": low_20d,
     }
@@ -270,7 +272,74 @@ class IndianSignalEngine:
                 ))
 
         # -------------------------------------------------------------
-        # 4. Bearish Short-Setup Signal (Explicitly labeled)
+        # 4. Oversold Mean-Reversion Value Bounce (Swing / Positional)
+        # -------------------------------------------------------------
+        if tech["rsi"] <= 35:
+            stop = round(min(tech["low_20d"], p - 1.5 * atr), 2)
+            risk = p - stop
+            if risk > 0:
+                t1 = round(p + 1.5 * risk, 2)
+                t2 = round(p + 2.5 * risk, 2)
+                rr = round((t1 - p) / risk, 2)
+                signals.append(IndianTradeSignal(
+                    signal_id=_generate_signal_id(inst.symbol, "OVERSOLD_BOUNCE", "BUY", today_str),
+                    horizon=SignalHorizon.SWING_EQUITY,
+                    strategy_name="Oversold Mean-Reversion Value Setup",
+                    strategy_version="1.0.0",
+                    symbol=inst.symbol,
+                    exchange=inst.exch_seg,
+                    token=inst.token,
+                    direction="BUY",
+                    signal_time_ist=ts_ist,
+                    data_source=sig_source,
+                    data_timestamp=sig_ts,
+                    entry_range_low=round(p * 0.995, 2),
+                    entry_range_high=round(p * 1.005, 2),
+                    stop_loss=stop,
+                    target_1=t1,
+                    target_2=t2,
+                    risk_reward_ratio=rr,
+                    validity_period="1 to 3 weeks",
+                    thesis=f"Deep oversold condition (RSI {tech['rsi']:.1f}) presenting favorable mean-reversion risk/reward near support.",
+                    quality_score=7.8,
+                ))
+
+        # -------------------------------------------------------------
+        # 5. Trend Pullback / EMA Support Rebound (Swing)
+        # -------------------------------------------------------------
+        pullback_dist = abs(p - tech["ema20"]) / max(tech["ema20"], 1.0)
+        if pullback_dist <= 0.02 and p >= tech["ema50"] and tech["ema20"] > tech["ema50"] and 40 <= tech["rsi"] <= 62:
+            stop = round(min(tech["ema50"], p - 1.2 * atr), 2)
+            risk = p - stop
+            if risk > 0:
+                t1 = round(p + 1.8 * risk, 2)
+                t2 = round(p + 3.0 * risk, 2)
+                rr = round((t1 - p) / risk, 2)
+                signals.append(IndianTradeSignal(
+                    signal_id=_generate_signal_id(inst.symbol, "TREND_PULLBACK", "BUY", today_str),
+                    horizon=SignalHorizon.SWING_EQUITY,
+                    strategy_name="Bullish EMA20 Trend Pullback Anchor",
+                    strategy_version="1.0.0",
+                    symbol=inst.symbol,
+                    exchange=inst.exch_seg,
+                    token=inst.token,
+                    direction="BUY",
+                    signal_time_ist=ts_ist,
+                    data_source=sig_source,
+                    data_timestamp=sig_ts,
+                    entry_range_low=round(p * 0.997, 2),
+                    entry_range_high=round(p * 1.004, 2),
+                    stop_loss=stop,
+                    target_1=t1,
+                    target_2=t2,
+                    risk_reward_ratio=rr,
+                    validity_period="1 to 3 weeks",
+                    thesis=f"Bullish pullback retest of 20 EMA in an established uptrend (RSI {tech['rsi']:.1f}).",
+                    quality_score=8.2,
+                ))
+
+        # -------------------------------------------------------------
+        # 6. Bearish Short-Setup Signal (Explicitly labeled)
         # -------------------------------------------------------------
         if p < tech["low_20d"] and tech["ema20"] < tech["ema50"] and tech["rsi"] < 45:
             stop = round(max(tech["ema20"], p + 1.5 * atr), 2)

@@ -33,12 +33,22 @@ from dotenv import load_dotenv
 from position_sizing import PositionPlan
 from signal_engine import TradeAlert
 import trade_journal
+import data_layer
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
+
+def is_indian_market() -> bool:
+    return os.getenv("MARKET", "").upper() == "INDIA" or os.getenv("TIMEZONE") == "Asia/Kolkata"
+
+
+def get_currency_symbol() -> str:
+    return "₹" if is_indian_market() else "$"
+
+
 PAPER_FILE = Path("logs/paper_portfolio.json")
-DEFAULT_CAPITAL = float(os.getenv("PAPER_STARTING_CAPITAL", "100000"))
+DEFAULT_CAPITAL = float(os.getenv("INITIAL_CAPITAL", os.getenv("PAPER_STARTING_CAPITAL", "1000000")))
 MAX_OPEN_POSITIONS = int(os.getenv("PAPER_MAX_POSITIONS", "10"))
 MAX_RISK_PER_TRADE_PCT = float(os.getenv("MAX_RISK_PER_TRADE_PCT", "1.0"))
 MAX_POSITION_SIZE_PCT = float(os.getenv("MAX_POSITION_SIZE_PCT", "10.0"))
@@ -97,7 +107,8 @@ def reset_state(starting_capital: float = DEFAULT_CAPITAL) -> dict:
 def _get_current_price(ticker: str) -> Optional[float]:
     """Fetch current price for a ticker."""
     try:
-        tk = yf.Ticker(ticker)
+        resolved = data_layer.resolve_ticker(ticker)
+        tk = yf.Ticker(resolved)
         hist = tk.history(period="1d")
         if not hist.empty:
             return float(hist["Close"].iloc[-1])
@@ -389,7 +400,8 @@ def update_positions(state: dict) -> List[dict]:
 def _fetch_atr(ticker: str, period: str = "1mo") -> float:
     """Fetch current ATR for a ticker."""
     try:
-        tk = yf.Ticker(ticker)
+        resolved = data_layer.resolve_ticker(ticker)
+        tk = yf.Ticker(resolved)
         hist = tk.history(period=period, interval="1d")
         if len(hist) < 5:
             return 0.0
@@ -558,13 +570,14 @@ def print_status(state: dict) -> None:
     total_return = ((portfolio_val - starting) / starting * 100)
     open_pos = state["open_positions"]
     closed = state["closed_trades"]
+    cur = get_currency_symbol()
 
     print(f"\n{'=' * 72}")
     print(f"  PAPER TRADING PORTFOLIO")
     print(f"{'=' * 72}")
-    print(f"\n  Starting Capital:  ${starting:>12,.2f}")
-    print(f"  Cash:              ${state['cash']:>12,.2f}")
-    print(f"  Portfolio Value:   ${portfolio_val:>12,.2f}  ({total_return:+.1f}%)")
+    print(f"\n  Starting Capital:  {cur}{starting:>12,.2f}")
+    print(f"  Cash:              {cur}{state['cash']:>12,.2f}")
+    print(f"  Portfolio Value:   {cur}{portfolio_val:>12,.2f}  ({total_return:+.1f}%)")
     print(f"  Open Positions:    {len(open_pos)}")
     print(f"  Closed Trades:     {len(closed)}")
 
@@ -579,7 +592,7 @@ def print_status(state: dict) -> None:
             t2 = "Y" if p.get("t2_hit") else "-"
             sigs = ", ".join(p.get("triggered_signals", [])[:3])
             print(f"  {p['ticker']:<7} {p['direction']:>4} {p['shares']:>6}"
-                  f" ${p['entry_price']:>7,.2f} ${p['current_stop']:>7,.2f}"
+                  f" {cur}{p['entry_price']:>7,.2f} {cur}{p['current_stop']:>7,.2f}"
                   f" {t1:>3} {t2:>3}  {sigs}")
 
     print(f"\n  Last Updated: {state.get('last_updated', 'N/A')}")

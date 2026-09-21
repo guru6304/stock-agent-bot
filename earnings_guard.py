@@ -34,7 +34,8 @@ def get_next_earnings(ticker: str) -> Optional[datetime]:
     Returns datetime or None if unavailable.
     """
     try:
-        tk = yf.Ticker(ticker)
+        from data_layer import resolve_ticker
+        tk = yf.Ticker(resolve_ticker(ticker))
 
         # Method 1: calendar
         try:

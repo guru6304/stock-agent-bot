@@ -1,37 +1,61 @@
 ticker,sector,notes
-AMZN,Consumer Discretionary,Amazon - E-commerce and AWS cloud
-AVGO,Technology,Broadcom - Semiconductors and infrastructure software
-BMNR,Technology,BitMine Immersion Technologies - Crypto mining
-CRWD,Technology,CrowdStrike - Cybersecurity endpoint protection
-DELL,Technology,Dell Technologies - PCs servers and storage
-META,Technology,Meta Platforms - Social media and AI
-MP,Materials,MP Materials - Rare earth mining
-NFLX,Communication Services,Netflix - Streaming entertainment
-ONDS,Technology,Ondas Holdings - Wireless infrastructure
-QQQ,ETF,Invesco QQQ Trust - Nasdaq 100 index ETF
-SPY,ETF,SPDR S&P 500 ETF Trust - S&P 500 index ETF
-TSLA,Consumer Discretionary,Tesla - EVs and energy storage
-URA,ETF,Global X Uranium ETF - Uranium miners
-ZETA,Technology,Zeta Global Holdings - Marketing platform AI
-ABBV,Healthcare,AbbVie - Pharma (previously held)
-ASTS,Technology,AST SpaceMobile - Satellite broadband (previously held)
-BIDU,Technology,Baidu - Chinese AI and search (previously held)
-BSOL,Crypto,Bitwise Solana Staking ETF (previously held)
-EOSE,Industrials,Eos Energy - Battery storage (previously held)
-GEV,Industrials,GE Vernova - Power and energy (previously held)
-GME,Consumer Discretionary,GameStop - Retail gaming (previously held)
-HIMS,Healthcare,Hims & Hers Health - Telehealth (previously held)
-HOOD,Financials,Robinhood Markets - Trading platform (previously held)
-IREN,Technology,Iren Ltd - Data center and crypto (previously held)
-MAGS,ETF,Roundhill Magnificent Seven ETF (previously held)
-NBIS,Technology,Nebius Group - AI infrastructure (previously held)
-NTR,Materials,Nutrien - Fertilizer and agriculture (previously held)
-NVO,Healthcare,Novo Nordisk - Diabetes and obesity drugs (previously held)
-OKLO,Industrials,Oklo Inc - Nuclear micro-reactors (previously held)
-RBLX,Technology,Roblox - Gaming platform (previously held)
-RKLB,Industrials,Rocket Lab - Space launch services (previously held)
-SLV,ETF,iShares Silver Trust (previously held)
-SOFI,Financials,SoFi Technologies - Fintech (previously held)
-TMQ,Materials,Trilogy Metals - Copper mining (previously held)
-XLE,ETF,Energy Select Sector SPDR (previously held)
-XPEV,Consumer Discretionary,XPeng - Chinese EV maker (previously held)
+GODREJCP,Indian Equities,GODREJCP
+BHARTIARTL,Indian Equities,BHARTIARTL
+UPL,Indian Equities,UPL
+TCS,Indian Equities,TCS
+COFORGE,Indian Equities,COFORGE
+AMBER,Indian Equities,AMBER
+HINDALCO,Indian Equities,HINDALCO
+HINDZINC,Indian Equities,HINDZINC
+MARUTI,Indian Equities,MARUTI
+PETRONET,Indian Equities,PETRONET
+SUZLON,Indian Equities,SUZLON
+GRASIM,Indian Equities,GRASIM
+TECHM,Indian Equities,TECHM
+HINDPETRO,Indian Equities,HINDPETRO
+UNOMINDA,Indian Equities,UNOMINDA
+JSWENERGY,Indian Equities,JSWENERGY
+RBLBANK,Indian Equities,RBLBANK
+LICHSGFIN,Indian Equities,LICHSGFIN
+IREDA,Indian Equities,IREDA
+IRFC,Indian Equities,IRFC
+ASHOKLEY,Indian Equities,ASHOKLEY
+AUBANK,Indian Equities,AUBANK
+BDL,Indian Equities,BDL
+BOSCHLTD,Indian Equities,BOSCHLTD
+COLPAL,Indian Equities,COLPAL
+NMDC,Indian Equities,NMDC
+MANKIND,Indian Equities,MANKIND
+ITC,Indian Equities,ITC
+NHPC,Indian Equities,NHPC
+ONGC,Indian Equities,ONGC
+PGEL,Indian Equities,PGEL
+KOTAKBANK,Indian Equities,KOTAKBANK
+LAURUSLABS,Indian Equities,LAURUSLABS
+BSE,Indian Equities,BSE
+M&M,Indian Equities,M&M
+SBILIFE,Indian Equities,SBILIFE
+BANDHANBNK,Indian Equities,BANDHANBNK
+HAL,Indian Equities,HAL
+ADANIENT,Indian Equities,ADANIENT
+VMM,Indian Equities,VMM
+INDUSTOWER,Indian Equities,INDUSTOWER
+IDFCFIRSTB,Indian Equities,IDFCFIRSTB
+KAYNES,Indian Equities,KAYNES
+LUPIN,Indian Equities,LUPIN
+ABB,Indian Equities,ABB
+FORCEMOT,Indian Equities,FORCEMOT
+NTPC,Indian Equities,NTPC
+HINDUNILVR,Indian Equities,HINDUNILVR
+ASTRAL,Indian Equities,ASTRAL
+DLF,Indian Equities,DLF
+PAGEIND,Indian Equities,PAGEIND
+GODREJPROP,Indian Equities,GODREJPROP
+POWERGRID,Indian Equities,POWERGRID
+ADANIPORTS,Indian Equities,ADANIPORTS
+APOLLOHOSP,Indian Equities,APOLLOHOSP
+INFY,Indian Equities,INFY
+BAJAJFINSV,Indian Equities,BAJAJFINSV
+NESTLEIND,Indian Equities,NESTLEIND
+VBL,Indian Equities,VBL
+CUMMINSIND,Indian Equities,CUMMINSIND

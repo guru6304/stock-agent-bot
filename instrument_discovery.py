@@ -271,16 +271,34 @@ class DynamicInstrumentDiscovery:
                 und = inst.name.upper() if inst.name else inst.symbol
                 fno_by_und.setdefault(und, []).append(inst)
 
-        self._equity_universe = equity_list
+        # Prioritize high-liquidity equities (those with active F&O derivatives listed on NSE)
+        fno_symbols_clean = {s.upper().replace("-EQ", "") for s in fno_by_und.keys()}
+        
+        valid_equities = [
+            inst for inst in equity_list 
+            if "TEST" not in inst.symbol.upper() and not inst.symbol.startswith("111") and inst.symbol.replace("&", "").replace("-", "").replace("_", "").isalnum()
+        ]
+        
+        fno_equities = [
+            inst for inst in valid_equities 
+            if inst.symbol in fno_symbols_clean or inst.name.upper() in fno_symbols_clean
+        ]
+        non_fno_equities = [
+            inst for inst in valid_equities 
+            if not (inst.symbol in fno_symbols_clean or inst.name.upper() in fno_symbols_clean)
+        ]
+        
+        self._equity_universe = fno_equities + non_fno_equities
         self._fno_universe = fno_list
         self._fno_by_underlying = fno_by_und
         self._latest_stats = stats
 
         logger.info(
-            "Discovery completed: %d total received, %d valid, %d equity eligible, %d F&O eligible",
+            "Discovery completed: %d total received, %d valid, %d equity eligible (%d liquid F&O), %d F&O eligible",
             stats.records_received,
             stats.records_valid,
             stats.eligible_equity,
+            len(fno_equities),
             stats.eligible_fno,
         )
         return stats

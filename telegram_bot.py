@@ -55,15 +55,24 @@ PORTFOLIO_FILE = Path("portfolio.json")
 OFFSET_FILE    = Path("logs/bot_offset.txt")
 
 
+def is_indian_market() -> bool:
+    return os.getenv("MARKET", "").upper() == "INDIA" or os.getenv("TIMEZONE") == "Asia/Kolkata"
+
+
+def get_currency_symbol() -> str:
+    return "₹" if is_indian_market() else "$"
+
+
 # ---------------------------------------------------------------------------
 # Portfolio persistence helpers
 # ---------------------------------------------------------------------------
 
 def _load_portfolio() -> dict:
     try:
-        return json.loads(PORTFOLIO_FILE.read_text())
+        import data_layer
+        return data_layer.load_portfolio()
     except Exception as e:
-        logger.error("Failed to load portfolio.json: %s", e)
+        logger.error("Failed to load portfolio: %s", e)
         return {}
 
 
@@ -137,11 +146,11 @@ def _get_trade_feedback(ticker: str, direction: str, shares: int, price: float, 
         pos_val    = shares * price
         pos_pct    = pos_val / total_val * 100
 
+        cur = get_currency_symbol()
         lines.append("Trade Feedback: %s %s" % (direction, ticker))
         lines.append("─" * 40)
-        lines.append("Your price: $%.2f  |  Current: $%.2f  (%s)" % (price, current, diff_str))
-        lines.append("Position: %d × $%.2f = $%s (%.1f%% of portfolio)" % (
-            shares, price, f"{pos_val:,.0f}", pos_pct))
+        lines.append(f"Your price: {cur}{price:.2f}  |  Current: {cur}{current:.2f}  ({diff_str})")
+        lines.append(f"Position: {shares} × {cur}{price:.2f} = {cur}{pos_val:,.0f} ({pos_pct:.1f}% of portfolio)")
         lines.append("")
 
         # Technical timing assessment
@@ -206,9 +215,10 @@ def _get_trade_feedback(ticker: str, direction: str, shares: int, price: float, 
 
         # Suggested stop
         if direction == "BUY":
+            cur = get_currency_symbol()
             atr = getattr(tech, "atr", None) or (current * 0.02)
             suggested_stop = round(current - 2 * atr, 2)
-            lines.append("  Suggested stop: $%.2f (2×ATR below entry)" % suggested_stop)
+            lines.append(f"  Suggested stop: {cur}{suggested_stop:.2f} (2×ATR below entry)")
         lines.append("")
 
         # Overall grade
@@ -309,21 +319,22 @@ def get_chat_id():
 def cmd_status(args=""):
     """Portfolio summary."""
     try:
+        cur = get_currency_symbol()
         portfolio = _load_portfolio()
-        total = portfolio.get("total_portfolio_value", 0)
-        cash = portfolio.get("available_cash", 0)
+        total = float(portfolio.get("total_portfolio_value", 0) or 0)
+        cash = float(portfolio.get("available_cash", 0) or 0)
         holdings = portfolio.get("holdings", [])
         unrealized = sum(float(h.get("unrealized_pnl", 0) or 0) for h in holdings)
         realized = float(portfolio.get("realized_pnl_ytd", 0) or 0)
 
         lines = ["Portfolio Summary"]
         lines.append("=" * 30)
-        lines.append("Net Liq: $%s" % f"{total:,.0f}")
-        lines.append("Cash: $%s" % f"{cash:,.0f}")
+        lines.append("Net Liq: %s%s" % (cur, f"{total:,.0f}"))
+        lines.append("Cash: %s%s" % (cur, f"{cash:,.0f}"))
         lines.append("Positions: %d" % len(holdings))
-        lines.append("Unrealized: $%s" % f"{unrealized:+,.0f}")
-        lines.append("Realized YTD: $%s" % f"{realized:+,.0f}")
-        lines.append("Total P&L: $%s" % f"{unrealized + realized:+,.0f}")
+        lines.append("Unrealized: %s%s" % (cur, f"{unrealized:+,.0f}"))
+        lines.append("Realized YTD: %s%s" % (cur, f"{realized:+,.0f}"))
+        lines.append("Total P&L: %s%s" % (cur, f"{unrealized + realized:+,.0f}"))
 
         # Top winners/losers
         sorted_h = sorted(holdings, key=lambda h: float(h.get("unrealized_pnl", 0) or 0))
@@ -331,11 +342,11 @@ def cmd_status(args=""):
             worst = sorted_h[0]
             best = sorted_h[-1]
             lines.append("")
-            lines.append("Best: %s $%s (%.1f%%)" % (
-                best["ticker"], f"{float(best.get('unrealized_pnl', 0)):+,.0f}",
+            lines.append("Best: %s %s%s (%.1f%%)" % (
+                best["ticker"], cur, f"{float(best.get('unrealized_pnl', 0)):+,.0f}",
                 float(best.get("pnl_pct", 0))))
-            lines.append("Worst: %s $%s (%.1f%%)" % (
-                worst["ticker"], f"{float(worst.get('unrealized_pnl', 0)):+,.0f}",
+            lines.append("Worst: %s %s%s (%.1f%%)" % (
+                worst["ticker"], cur, f"{float(worst.get('unrealized_pnl', 0)):+,.0f}",
                 float(worst.get("pnl_pct", 0))))
 
         return "\n".join(lines)
@@ -346,6 +357,7 @@ def cmd_status(args=""):
 def cmd_positions(args=""):
     """List all open positions."""
     try:
+        cur = get_currency_symbol()
         portfolio = _load_portfolio()
         holdings = portfolio.get("holdings", [])
         if not holdings:
@@ -356,10 +368,10 @@ def cmd_positions(args=""):
         for h in sorted(holdings, key=lambda x: x.get("ticker", "")):
             pnl = float(h.get("unrealized_pnl", 0) or 0)
             pct = float(h.get("pnl_pct", 0) or 0)
-            pnl_str = "${:+,.0f}".format(pnl)
-            lines.append("%s: %d @ $%.2f | %s (%.1f%%)" % (
-                h["ticker"], h.get("shares", 0),
-                float(h.get("current_price", 0)), pnl_str, pct))
+            pnl_str = f"{cur}{pnl:+,.0f}"
+            lines.append("%s: %g @ %s%.2f | %s (%.1f%%)" % (
+                h["ticker"], float(h.get("shares", 0)),
+                cur, float(h.get("current_price", 0)), pnl_str, pct))
 
         return "\n".join(lines)
     except Exception as e:
@@ -378,14 +390,18 @@ def cmd_sell(args=""):
 
 def cmd_check(args=""):
     """Check a single ticker."""
+    cur = get_currency_symbol()
     ticker = args.strip().upper() if args else ""
     if not ticker:
+        example = "RELIANCE" if is_indian_market() else "TSLA"
         try:
             portfolio = _load_portfolio()
             tickers = sorted(h["ticker"] for h in portfolio.get("holdings", []))
-            return "Usage: /check TSLA\n\nYour holdings:\n%s\n\nOr just type a ticker name (e.g. NVDA)" % " ".join(tickers)
+            if tickers:
+                return "Usage: /check %s\n\nYour holdings:\n%s\n\nOr just type a ticker name (e.g. %s)" % (example, " ".join(tickers), example)
+            return "Usage: /check %s\n\nOr just type a ticker name (e.g. %s)" % (example, example)
         except Exception:
-            return "Usage: /check TSLA\n\nOr just type a ticker name (e.g. NVDA)"
+            return "Usage: /check %s\n\nOr just type a ticker name (e.g. %s)" % (example, example)
 
     try:
         import position_monitor
@@ -409,11 +425,11 @@ def cmd_check(args=""):
 
         lines = ["%s Analysis" % ticker]
         lines.append("-" * 30)
-        lines.append("Price: $%.2f" % tech.current_price)
+        lines.append("Price: %s%.2f" % (cur, tech.current_price))
         lines.append("RSI: %.1f" % tech.rsi)
         lines.append("MACD: %.2f" % tech.macd_value)
         lines.append("Above 200 SMA: %s" % tech.price_above_200sma)
-        lines.append("Fundamental: %d/6" % fund.fundamental_score)
+        lines.append("Fundamental: %d/15" % fund.fundamental_score)
 
         if alert:
             lines.append("")
@@ -421,7 +437,26 @@ def cmd_check(args=""):
             signals = ", ".join(s[0] for s in alert.triggered_signals)
             lines.append("Signals: %s" % signals)
         else:
-            lines.append("\nNo signal (below threshold)")
+            lines.append("\nConfluence Signal: None (below threshold)")
+
+        # In Indian market, also evaluate Indian horizon strategies
+        if is_indian_market():
+            try:
+                from indian_signals import IndianSignalEngine
+                from instrument_discovery import InstrumentMetadata
+                from market_data_service import CandleData
+                engine = IndianSignalEngine()
+                c_data = CandleData(df=df, symbol=ticker, token="", interval="1d", data_source="yfinance", is_live=False, data_timestamp=str(df.index[-1]), is_candle_complete=True)
+                inst = InstrumentMetadata(token="", symbol=ticker, raw_symbol=f"{ticker}-EQ", name=ticker, expiry=None, strike=0.0, lotsize=1, instrument_type="", exch_seg="NSE", tick_size=0.05, is_fno=False)
+                ind_signals = engine.evaluate_equity_horizons(inst, c_data)
+                if ind_signals:
+                    lines.append("\n🇮🇳 Indian Horizon Setups:")
+                    for sig in ind_signals:
+                        lines.append("  • %s: %s (%s)" % (sig.direction, sig.strategy_name, sig.horizon.value))
+                        lines.append("    Entry: %s%.2f–%s%.2f | Stop: %s%.2f | T1: %s%.2f" % (
+                            cur, sig.entry_range_low, cur, sig.entry_range_high, cur, sig.stop_loss, cur, sig.target_1))
+            except Exception as e:
+                logger.debug("Indian signals check: %s", e)
 
         if tech.pattern_details:
             lines.append("\nPatterns: %s" % ", ".join(tech.pattern_details[:3]))
@@ -439,6 +474,7 @@ def cmd_scan(args=""):
         import technical_analysis
         import fundamental_analysis
 
+        cur = get_currency_symbol()
         watchlist = data_layer.load_watchlist()
         portfolio = _load_portfolio()
         held_tickers = set(h["ticker"] for h in portfolio.get("holdings", []))
@@ -456,13 +492,36 @@ def cmd_scan(args=""):
                 fund = fundamental_analysis.analyze(ticker, entry.get("sector", ""))
                 alert = signal_engine.evaluate(tech, fund)
                 if alert:
-                    line = "%s %s (score %d)" % (alert.direction, ticker, alert.signal_score)
+                    line = "%s %s (%s%.2f | score %d)" % (alert.direction, ticker, cur, tech.current_price, alert.signal_score)
                     if ticker in held_tickers:
                         hold_signals.append(line)
                     elif alert.direction == "BUY":
                         buy_signals.append((alert.signal_score, line))
             except Exception:
                 continue
+
+        # In Indian market, also scan Indian horizon engine
+        if is_indian_market():
+            try:
+                from indian_signals import IndianSignalEngine
+                from instrument_discovery import InstrumentMetadata
+                from market_data_service import CandleData
+                engine = IndianSignalEngine()
+                for entry in watchlist[:20]:
+                    ticker = entry["ticker"]
+                    try:
+                        df = data_layer.fetch_daily_ohlcv(ticker)
+                        if df.empty: continue
+                        c_data = CandleData(df=df, symbol=ticker, token="", interval="1d", data_source="yfinance", is_live=False, data_timestamp=str(df.index[-1]), is_candle_complete=True)
+                        inst = InstrumentMetadata(token="", symbol=ticker, raw_symbol=f"{ticker}-EQ", name=ticker, expiry=None, strike=0.0, lotsize=1, instrument_type="", exch_seg="NSE", tick_size=0.05, is_fno=False)
+                        for sig in engine.evaluate_equity_horizons(inst, c_data):
+                            if sig.direction == "BUY":
+                                line = "BUY %s [%s] @ %s%.2f (Stop: %s%.2f)" % (sig.symbol, sig.horizon.value, cur, sig.entry_range_low, cur, sig.stop_loss)
+                                buy_signals.append((int(sig.quality_score * 10), line))
+                    except Exception:
+                        continue
+            except Exception as e:
+                logger.debug("Indian scan error: %s", e)
 
         lines = []
         if hold_signals:
@@ -471,9 +530,18 @@ def cmd_scan(args=""):
         if buy_signals:
             if lines:
                 lines.append("")
-            lines.append("New Buy Opportunities:")
-            for _, l in sorted(buy_signals, reverse=True)[:5]:
-                lines.append(l)
+            label = "New Indian Buy Opportunities:" if is_indian_market() else "New Buy Opportunities:"
+            lines.append(label)
+            seen_t = set()
+            for _, l in sorted(buy_signals, reverse=True):
+                parts = l.split()
+                t_key = parts[1] if len(parts) > 1 else l
+                if t_key not in seen_t:
+                    seen_t.add(t_key)
+                    lines.append(l)
+                if len(seen_t) >= 6:
+                    break
+
         if not lines:
             return "No signals right now. Use /buy for a full watchlist BUY scan."
         return "\n".join(lines)
@@ -490,6 +558,7 @@ def cmd_buy(args=""):
         import fundamental_analysis
         import position_sizing
 
+        cur = get_currency_symbol()
         watchlist = data_layer.load_watchlist()
         portfolio = _load_portfolio()
         held_tickers = set(h["ticker"] for h in portfolio.get("holdings", []))
@@ -520,25 +589,69 @@ def cmd_buy(args=""):
                             plan.stop_loss,
                             plan.target_1,
                             plan.target_2,
-                            alert.signal_score,
                             in_portfolio,
+                            "Confluence Breakout",
                         ))
                     else:
                         candidates.append((alert.signal_score, ticker, tech.current_price,
-                                           0, 0, 0, alert.signal_score, in_portfolio))
+                                           0, 0, 0, in_portfolio, "Confluence"))
             except Exception:
                 continue
 
-        if not candidates:
-            return "No BUY signals on the watchlist right now."
+        # In Indian market, also scan Indian horizon engine
+        if is_indian_market():
+            try:
+                from indian_signals import IndianSignalEngine
+                from instrument_discovery import InstrumentMetadata
+                from market_data_service import CandleData
+                engine = IndianSignalEngine()
+                for entry in watchlist[:30]:
+                    ticker = entry["ticker"]
+                    if filter_text and filter_text not in ticker and filter_text not in entry.get("sector", "").upper():
+                        continue
+                    try:
+                        df = data_layer.fetch_daily_ohlcv(ticker)
+                        if df.empty: continue
+                        c_data = CandleData(df=df, symbol=ticker, token="", interval="1d", data_source="yfinance", is_live=False, data_timestamp=str(df.index[-1]), is_candle_complete=True)
+                        inst = InstrumentMetadata(token="", symbol=ticker, raw_symbol=f"{ticker}-EQ", name=ticker, expiry=None, strike=0.0, lotsize=1, instrument_type="", exch_seg="NSE", tick_size=0.05, is_fno=False)
+                        ind_sigs = engine.evaluate_equity_horizons(inst, c_data)
+                        for sig in ind_sigs:
+                            if sig.direction == "BUY":
+                                in_portfolio = " [HELD]" if ticker in held_tickers else ""
+                                candidates.append((
+                                    int(sig.quality_score * 10),
+                                    sig.symbol,
+                                    sig.entry_range_low,
+                                    sig.stop_loss,
+                                    sig.target_1,
+                                    sig.target_2,
+                                    in_portfolio,
+                                    sig.strategy_name,
+                                ))
+                    except Exception:
+                        continue
+            except Exception as e:
+                logger.debug("Indian signals evaluation error in cmd_buy: %s", e)
 
-        candidates.sort(reverse=True)
-        lines = ["BUY Opportunities (%d found)" % len(candidates)]
+        if not candidates:
+            return "No BUY signals on the Indian watchlist right now."
+
+        # Deduplicate candidates by ticker
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        unique_candidates = []
+        seen = set()
+        for c in candidates:
+            if c[1] not in seen:
+                seen.add(c[1])
+                unique_candidates.append(c)
+
+        label = "🇮🇳 BUY Opportunities (%d found)" % len(unique_candidates) if is_indian_market() else "BUY Opportunities (%d found)" % len(unique_candidates)
+        lines = [label]
         lines.append("-" * 38)
-        for score, ticker, price, stop, t1, t2, _, held in candidates[:8]:
-            lines.append("%s%s  $%.2f  score:%d" % (ticker, held, price, score))
+        for score, ticker, price, stop, t1, t2, held, strat in unique_candidates[:8]:
+            lines.append("%s%s  %s%.2f  (%s)" % (ticker, held, cur, price, strat))
             if stop:
-                lines.append("  Stop: $%.2f | T1: $%.2f | T2: $%.2f" % (stop, t1, t2))
+                lines.append("  Stop: %s%.2f | T1: %s%.2f | T2: %s%.2f" % (cur, stop, cur, t1, cur, t2))
         lines.append("")
         lines.append("Use /check TICKER for full details.")
         return "\n".join(lines)
@@ -559,8 +672,9 @@ def cmd_risk(args=""):
         lines.append("Cash: %.1f%%" % float(cash_pct or 0))
         total = report.get("total_value", 0)
         unrealized = report.get("total_unrealized_pnl", 0)
-        lines.append("Portfolio: $%s" % "{:,.0f}".format(float(total or 0)))
-        lines.append("Unrealized: $%s" % "{:+,.0f}".format(float(unrealized or 0)))
+        cur = get_currency_symbol()
+        lines.append(f"Portfolio: {cur}{float(total or 0):,.0f}")
+        lines.append(f"Unrealized: {cur}{float(unrealized or 0):+,.0f}")
 
         sector = report.get("sector_exposure", {})
         if sector:
@@ -587,6 +701,8 @@ def cmd_risk(args=""):
 
 def cmd_regime(args=""):
     """Current market regime."""
+    if is_indian_market():
+        return cmd_indiaregime(args)
     try:
         regime_file = Path("logs/market_regime.json")
         if regime_file.exists():
@@ -626,16 +742,17 @@ def cmd_alerts(args=""):
         import price_alerts
         alerts = price_alerts.get_active_alerts()
         if not alerts:
-            return "No active price alerts set.\n\nTo add one:\n/alert TSLA above 400"
+            example_ticker = "RELIANCE" if is_indian_market() else "TSLA"
+            example_price = "1300" if is_indian_market() else "400"
+            return f"No active price alerts set.\n\nTo add one:\n/alert {example_ticker} above {example_price}"
 
+        cur = get_currency_symbol()
         lines = ["Active Price Alerts (%d)" % len(alerts)]
         lines.append("-" * 30)
         for a in alerts:
             note = a.get("note", "")
             note_str = " (%s)" % note if note else ""
-            lines.append("%s %s $%.2f%s" % (
-                a.get("ticker", ""), a.get("condition", ""),
-                float(a.get("price", 0)), note_str))
+            lines.append(f"{a.get('ticker', '')} {a.get('condition', '')} {cur}{float(a.get('price', 0)):.2f}{note_str}")
         return "\n".join(lines)
     except Exception as e:
         return "Alerts error: %s" % e
@@ -806,7 +923,8 @@ def cmd_options(args=""):
     """Options strategy analysis for a ticker."""
     ticker = args.strip().upper() if args.strip() else ""
     if not ticker:
-        return "Usage: /options TSLA\n\nAnalyzes the options chain and suggests a strategy."
+        example_ticker = "RELIANCE" if is_indian_market() else "TSLA"
+        return f"Usage: /options {example_ticker}\n\nAnalyzes the options chain and suggests a strategy."
     try:
         import options_analyzer
         result = options_analyzer.analyze_ticker_options(ticker, "BUY")
@@ -819,7 +937,8 @@ def cmd_grade(args=""):
     """Grade a ticker — full analysis with grade, logic, risk, and options."""
     ticker = args.strip().upper() if args.strip() else ""
     if not ticker:
-        return "Usage: /grade TSLA\n\nFull graded analysis with logic, risks, and options strategy."
+        example_ticker = "RELIANCE" if is_indian_market() else "TSLA"
+        return f"Usage: /grade {example_ticker}\n\nFull graded analysis with logic, risks, and options strategy."
     try:
         import data_layer
         import technical_analysis
@@ -833,6 +952,7 @@ def cmd_grade(args=""):
         if df.empty:
             return "No data for %s" % ticker
 
+        cur = get_currency_symbol()
         tech = technical_analysis.analyze(ticker, df)
         fund = fundamental_analysis.analyze(ticker, "Technology")
         alert = signal_engine.evaluate(tech, fund, threshold=1)  # Low threshold to always get a grade
@@ -840,7 +960,7 @@ def cmd_grade(args=""):
         if not alert:
             # Still generate a basic analysis even without a signal
             lines = ["%s — Grade: N/A (no signal)" % ticker]
-            lines.append("Price: $%.2f" % tech.current_price)
+            lines.append(f"Price: {cur}{tech.current_price:.2f}")
             lines.append("RSI: %.1f | MACD: %.2f" % (tech.rsi, tech.macd_value))
             lines.append("Above 200 SMA: %s" % tech.price_above_200sma)
             lines.append("Fundamental: %d/15" % fund.fundamental_score)
@@ -866,12 +986,14 @@ def cmd_grade(args=""):
 
 
 def cmd_bought(args=""):
-    """Record a buy trade. Usage: /bought TSLA 100 245.50"""
+    """Record a buy trade."""
+    example_ticker = "RELIANCE" if is_indian_market() else "TSLA"
+    example_price = "1220.00" if is_indian_market() else "245.50"
     parts = args.strip().upper().split()
     if len(parts) < 3:
         return (
             "Usage: /bought TICKER SHARES PRICE\n"
-            "Example: /bought TSLA 100 245.50\n\n"
+            f"Example: /bought {example_ticker} 100 {example_price}\n\n"
             "Records the trade, updates your portfolio, and gives investor-quality feedback."
         )
     ticker = parts[0]
@@ -879,10 +1001,11 @@ def cmd_bought(args=""):
         shares = float(parts[1])
         price  = float(parts[2])
     except ValueError:
-        return "Invalid format. Example: /bought TSLA 100 245.50"
+        return f"Invalid format. Example: /bought {example_ticker} 100 {example_price}"
 
     portfolio = _load_portfolio()
     holdings  = portfolio.get("holdings", [])
+    cur = get_currency_symbol()
 
     # Find existing position or create new one
     existing = next((h for h in holdings if h.get("ticker") == ticker), None)
@@ -898,7 +1021,7 @@ def cmd_bought(args=""):
         existing["current_value"] = round(new_shares * price, 2)
         existing["unrealized_pnl"] = round((price - new_avg) * new_shares, 2)
         existing["pnl_pct"]       = round((price - new_avg) / new_avg * 100, 2) if new_avg else 0
-        msg = f"Added to existing {ticker} position. New: {new_shares:g} shares @ avg ${new_avg:.2f}"
+        msg = f"Added to existing {ticker} position. New: {new_shares:g} shares @ avg {cur}{new_avg:.2f}"
     else:
         holdings.append({
             "ticker":        ticker,
@@ -912,7 +1035,7 @@ def cmd_bought(args=""):
             "sector":        "Unknown",
             "strategy":      "Manual",
         })
-        msg = f"New position opened: {ticker} {shares} shares @ ${price:.2f}"
+        msg = f"New position opened: {ticker} {shares} shares @ {cur}{price:.2f}"
 
     portfolio["holdings"] = holdings
     # Update total portfolio value
@@ -931,12 +1054,14 @@ def cmd_bought(args=""):
 
 
 def cmd_sold(args=""):
-    """Record a sell trade. Usage: /sold TSLA 50 260.00"""
+    """Record a sell trade."""
+    example_ticker = "RELIANCE" if is_indian_market() else "TSLA"
+    example_price = "1260.00" if is_indian_market() else "260.00"
     parts = args.strip().upper().split()
     if len(parts) < 3:
         return (
             "Usage: /sold TICKER SHARES PRICE\n"
-            "Example: /sold TSLA 50 260.00\n\n"
+            f"Example: /sold {example_ticker} 50 {example_price}\n\n"
             "Records the exit, calculates P&L, and gives trade feedback."
         )
     ticker = parts[0]
@@ -944,7 +1069,7 @@ def cmd_sold(args=""):
         shares = float(parts[1])
         price  = float(parts[2])
     except ValueError:
-        return "Invalid format. Example: /sold TSLA 50 260.00"
+        return f"Invalid format. Example: /sold {example_ticker} 50 {example_price}"
 
     portfolio = _load_portfolio()
     holdings  = portfolio.get("holdings", [])
@@ -996,7 +1121,8 @@ def cmd_sold(args=""):
     _save_portfolio(portfolio)
     _commit_portfolio_to_github(portfolio)
 
-    result_line = f"P&L: {sold_shares} × ${price - avg_cost:+.2f} = {pnl_sign}${realized_pnl:,.2f} ({pnl_sign}{pnl_pct:.1f}%)"
+    cur = get_currency_symbol()
+    result_line = f"P&L: {sold_shares} × {cur}{price - avg_cost:+.2f} = {pnl_sign}{cur}{realized_pnl:,.2f} ({pnl_sign}{pnl_pct:.1f}%)"
     feedback    = _get_trade_feedback(ticker, "SELL", sold_shares, price, portfolio)
     return f"{position_msg}\n{result_line}\n\n{feedback}"
 
@@ -1007,27 +1133,22 @@ def cmd_trades(args=""):
         portfolio = _load_portfolio()
         trades    = portfolio.get("realized_trades_ytd", [])
         if not trades:
-            return "No realized trades recorded yet.\n\nUse /sold TSLA 50 260 to record a sale."
+            example_ticker = "RELIANCE" if is_indian_market() else "TSLA"
+            example_price = "1260" if is_indian_market() else "260"
+            return f"No realized trades recorded yet.\n\nUse /sold {example_ticker} 50 {example_price} to record a sale."
 
+        cur    = get_currency_symbol()
         limit  = 10
         recent = trades[-limit:][::-1]
         lines  = ["Recent Trades (%d total YTD)" % len(trades), "─" * 35]
         for t in recent:
             sign = "+" if float(t.get("realized_pnl", 0)) >= 0 else ""
-            lines.append("%s  %s × %s  %s$%.0f (%s%.1f%%)" % (
-                t.get("date", "?"),
-                t.get("ticker", "?"),
-                t.get("shares", "?"),
-                sign,
-                abs(float(t.get("realized_pnl", 0))),
-                sign,
-                abs(float(t.get("pnl_pct", 0))),
-            ))
+            lines.append(f"{t.get('date', '?')}  {t.get('ticker', '?')} × {t.get('shares', '?')}  {sign}{cur}{abs(float(t.get('realized_pnl', 0))):.0f} ({sign}{abs(float(t.get('pnl_pct', 0))):.1f}%)")
 
         ytd = float(portfolio.get("realized_pnl_ytd", 0) or 0)
         ytd_sign = "+" if ytd >= 0 else ""
         lines.append("")
-        lines.append("Realized YTD: %s$%.2f" % (ytd_sign, ytd))
+        lines.append(f"Realized YTD: {ytd_sign}{cur}{ytd:.2f}")
         return "\n".join(lines)
     except Exception as e:
         return "Trades error: %s" % e
@@ -1117,21 +1238,24 @@ def cmd_sync(args=""):
 
 def cmd_help(args=""):
     """List available commands."""
+    example_ticker = "RELIANCE" if is_indian_market() else "TSLA"
+    example_price_buy = "1220.00" if is_indian_market() else "245.50"
+    example_price_sell = "1260.00" if is_indian_market() else "260.00"
     return (
         "Stock Agent Commands:\n"
         "─────────────────────\n"
         "TRADE RECORDING\n"
         "/sync      — Force IB Flex sync (auto every 15 min)\n"
-        "/bought TSLA 100 245.50 — Manual buy entry + feedback\n"
-        "/sold TSLA 50 260.00   — Manual sell entry + P&L\n"
+        f"/bought {example_ticker} 100 {example_price_buy} — Manual buy entry + feedback\n"
+        f"/sold {example_ticker} 50 {example_price_sell}   — Manual sell entry + P&L\n"
         "/trades    — Recent trade history\n"
         "\n"
         "ANALYSIS\n"
         "/buy       — BUY opportunities (watchlist scan)\n"
         "/sell      — Which holdings to sell?\n"
-        "/grade TSLA — Full graded analysis + options\n"
-        "/options TSLA — Options strategy suggestion\n"
-        "/check TSLA — Analyze any ticker\n"
+        f"/grade {example_ticker} — Full graded analysis + options\n"
+        f"/options {example_ticker} — Options strategy suggestion\n"
+        f"/check {example_ticker} — Analyze any ticker\n"
         "/scan      — Quick scan (holdings + top buys)\n"
         "\n"
         "PORTFOLIO\n"
@@ -1158,7 +1282,7 @@ def cmd_help(args=""):
         "/indiascan — Live dynamic scan of Indian market (NSE)\n"
         "/indiaregime — Indian market regime (Nifty 50 & India VIX)\n"
         "\n"
-        "Tip: Type a ticker (e.g. NVDA) to analyze it.\n"
+        f"Tip: Type a ticker (e.g. {example_ticker}) to analyze it.\n"
         "All alerts include grade, logic, risk, and options play."
     )
 
@@ -1245,7 +1369,8 @@ def handle_message(text, chat_id):
     if not text.startswith("/"):
         # Natural language — single ticker treated as check
         words = text.upper().split()
-        if len(words) == 1 and words[0].isalpha() and 1 <= len(words[0]) <= 5:
+        clean_word = words[0].replace("&", "").replace("-", "") if words else ""
+        if len(words) == 1 and clean_word.isalnum() and 2 <= len(words[0]) <= 15:
             return cmd_check(words[0])
         # Route to AI trade advisor for natural language questions
         try:

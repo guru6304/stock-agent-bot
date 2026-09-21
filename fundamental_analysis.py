@@ -6,12 +6,20 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from textblob import TextBlob
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+try:
+    from textblob import TextBlob
+except ImportError:
+    TextBlob = None
+
+try:
+    from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+    vader = SentimentIntensityAnalyzer()
+except ImportError:
+    SentimentIntensityAnalyzer = None
+    vader = None
+logger = logging.getLogger(__name__)
 
 from data_layer import fetch_fundamentals, fetch_news
-
-logger = logging.getLogger(__name__)
 
 # Sector median P/E ratios (approximate, used as baseline)
 SECTOR_MEDIAN_PE = {
@@ -27,9 +35,6 @@ SECTOR_MEDIAN_PE = {
     "Real Estate": 35,
     "Communication Services": 18,
 }
-
-vader = SentimentIntensityAnalyzer()
-
 
 @dataclass
 class FundamentalSignals:
@@ -99,8 +104,13 @@ def _fetch_extended_fundamentals(ticker: str) -> dict:
     """Fetch extended fundamental data directly from yfinance."""
     try:
         import yfinance as yf
-        tk = yf.Ticker(ticker)
+        from data_layer import resolve_ticker
+        resolved = resolve_ticker(ticker)
+        tk = yf.Ticker(resolved)
         info = tk.info or {}
+        if not info and resolved != ticker:
+            tk = yf.Ticker(ticker)
+            info = tk.info or {}
 
         result = {
             "forward_pe": info.get("forwardPE"),
@@ -175,15 +185,16 @@ def score_news_sentiment(articles: List[Dict]) -> float:
         if not text.strip():
             continue
 
+        item_scores = []
         # VADER
-        vader_score = vader.polarity_scores(text)["compound"]
-
+        if vader:
+            item_scores.append(vader.polarity_scores(text)["compound"])
         # TextBlob
-        blob_score = TextBlob(text).sentiment.polarity
+        if TextBlob:
+            item_scores.append(TextBlob(text).sentiment.polarity)
 
-        # Average both
-        combined = (vader_score + blob_score) / 2
-        scores.append(combined)
+        if item_scores:
+            scores.append(sum(item_scores) / len(item_scores))
 
     return sum(scores) / len(scores) if scores else 0.0
 
