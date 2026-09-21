@@ -17,6 +17,16 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 
+# Silence noisy yfinance HTTP 401 / crumb error logs on cloud servers
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+
+_warned_keys = set()
+
+def _warn_once(key: str, msg: str) -> None:
+    if key not in _warned_keys:
+        _warned_keys.add(key)
+        logger.info(msg)
+
 def is_indian_market() -> bool:
     """Return True if system is configured for Indian markets."""
     return (
@@ -306,7 +316,7 @@ def fetch_fundamentals_fmp(ticker: str) -> dict:
     }
 
     if not api_key or api_key.startswith("your_"):
-        logger.warning("FMP API key not configured — falling back to yfinance fundamentals")
+        _warn_once("fmp", "FMP API key not configured — using yfinance fundamentals fallback")
         return _fetch_fundamentals_yfinance(ticker)
 
     try:
@@ -442,7 +452,7 @@ def fetch_news_newsapi(ticker: str, days: int = 7) -> List[Dict]:
     """
     api_key = os.getenv("NEWSAPI_KEY", "")
     if not api_key or api_key.startswith("your_"):
-        logger.warning("NewsAPI key not configured — trying Finnhub")
+        _warn_once("newsapi", "NewsAPI key not configured — checking Finnhub fallback")
         return fetch_news_finnhub(ticker, days)
 
     from_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
@@ -473,7 +483,7 @@ def fetch_news_finnhub(ticker: str, days: int = 7) -> List[Dict]:
     """Fallback: fetch news from Finnhub."""
     api_key = os.getenv("FINNHUB_API_KEY", "")
     if not api_key or api_key.startswith("your_"):
-        logger.warning("Finnhub API key not configured")
+        _warn_once("finnhub", "Finnhub API key not configured — news sentiment skipped")
         return []
 
     from_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")

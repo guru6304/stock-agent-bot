@@ -18,6 +18,7 @@ except ImportError:
     SentimentIntensityAnalyzer = None
     vader = None
 logger = logging.getLogger(__name__)
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 from data_layer import fetch_fundamentals, fetch_news
 
@@ -107,10 +108,29 @@ def _fetch_extended_fundamentals(ticker: str) -> dict:
         from data_layer import resolve_ticker
         resolved = resolve_ticker(ticker)
         tk = yf.Ticker(resolved)
-        info = tk.info or {}
+        info = None
+        try:
+            info = tk.info
+        except Exception:
+            pass
         if not info and resolved != ticker:
-            tk = yf.Ticker(ticker)
-            info = tk.info or {}
+            try:
+                tk = yf.Ticker(ticker)
+                info = tk.info
+            except Exception:
+                pass
+        info = info or {}
+
+        if not info:
+            return {
+                "forward_pe": None, "peg_ratio": None, "price_to_sales": None,
+                "price_to_book": None, "ev_to_ebitda": None, "roe": None,
+                "roic": None, "gross_margin": None, "operating_margin": None,
+                "fcf": None, "market_cap": None, "current_ratio": None,
+                "short_pct": None, "institutional_pct": None, "dividend_yield": None,
+                "payout_ratio": None, "trailing_pe": None, "interest_coverage": None,
+                "earnings_surprises": [], "insider_buys": 0, "insider_sells": 0,
+            }
 
         result = {
             "forward_pe": info.get("forwardPE"),

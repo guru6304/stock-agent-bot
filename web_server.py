@@ -28,6 +28,8 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("web-server")
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 # Pre-import heavy dependencies sequentially on the main thread to prevent
 # multithreaded import race conditions in CPython / pandas / requests
