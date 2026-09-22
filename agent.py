@@ -53,6 +53,7 @@ load_dotenv()
 # Logging setup
 # ---------------------------------------------------------------------------
 
+os.makedirs("logs", exist_ok=True)
 LOG_FORMAT = "%(asctime)s  %(levelname)-8s  %(name)-20s  %(message)s"
 logging.basicConfig(
     level=logging.INFO,

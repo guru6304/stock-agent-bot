@@ -13,19 +13,20 @@ import time
 from pathlib import Path
 from typing import Optional
 
+import os
 from india_market_config import DEFAULT_SCANNER_CONFIG, now_ist
 from indian_signals import IndianTradeSignal
 
 logger = logging.getLogger("signal-dedup")
 
-DB_PATH = Path("logs/indian_signal_dedup.db")
+DEFAULT_DB_PATH = Path(os.getenv("INDIAN_DEDUP_DB_PATH", "logs/indian_signal_dedup.db"))
 
 
 class DurableSignalDeduplicator:
     """Manages restart-safe deduplication of emitted trading signals."""
 
     def __init__(self, db_path: Optional[Path] = None, cooldown_hours: Optional[float] = None):
-        self.db_path = db_path or DB_PATH
+        self.db_path = db_path or DEFAULT_DB_PATH
         self.cooldown_hours = (
             cooldown_hours
             if cooldown_hours is not None
@@ -50,6 +51,7 @@ class DurableSignalDeduplicator:
                 )
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_emitted_time ON emitted_signals(emitted_epoch)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sym_dir ON emitted_signals(symbol, direction, emitted_epoch)")
             conn.commit()
         finally:
             conn.close()
@@ -57,19 +59,19 @@ class DurableSignalDeduplicator:
     def _make_key(self, signal: IndianTradeSignal) -> str:
         """Create a semantic deduplication key."""
         today_date = now_ist().strftime("%Y-%m-%d")
-        return f"{signal.symbol}:{signal.horizon.value}:{signal.direction}:{today_date}"
+        return f"{signal.symbol}:{signal.direction}:{today_date}"
 
     def is_duplicate(self, signal: IndianTradeSignal) -> bool:
-        """Return True if the same signal was emitted within the cooldown window."""
-        key = self._make_key(signal)
+        """Return True if the same symbol and direction was emitted within the cooldown window."""
         now_epoch = time.time()
         cooldown_seconds = self.cooldown_hours * 3600.0
 
         conn = sqlite3.connect(self.db_path)
         try:
+            # Check latest emission for this instrument and direction
             cur = conn.execute(
-                "SELECT emitted_epoch FROM emitted_signals WHERE dedup_key = ?",
-                (key,),
+                "SELECT emitted_epoch FROM emitted_signals WHERE symbol = ? AND direction = ? ORDER BY emitted_epoch DESC LIMIT 1",
+                (signal.symbol, signal.direction),
             )
             row = cur.fetchone()
             if row:

@@ -124,17 +124,22 @@ class DynamicInstrumentDiscovery:
     def _save_to_cache(self, records: list) -> None:
         try:
             CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-            CACHE_FILE.write_text(json.dumps(records), encoding="utf-8")
+            # Filter to allowed segments (NSE, NFO, BSE) to dramatically reduce file size & memory
+            filtered = [
+                r for r in records
+                if isinstance(r, dict) and str(r.get("exch_seg", "")).strip().upper() in ALLOWED_SEGMENTS
+            ]
+            CACHE_FILE.write_text(json.dumps(filtered), encoding="utf-8")
             CACHE_METADATA_FILE.write_text(
                 json.dumps({
                     "timestamp": time.time(),
                     "retrieved_ist": now_ist().isoformat(),
-                    "records_count": len(records),
+                    "records_count": len(filtered),
                     "source_url": self.master_url,
                 }),
                 encoding="utf-8",
             )
-            logger.info("Saved %d instruments to cache", len(records))
+            logger.info("Saved %d instruments to cache (filtered to %s)", len(filtered), ALLOWED_SEGMENTS)
         except Exception as e:
             logger.warning("Could not persist instrument cache: %s", e)
 
@@ -148,13 +153,13 @@ class DynamicInstrumentDiscovery:
 
         logger.info("Fetching authoritative instrument master from %s", self.master_url)
         try:
-            resp = self.http.get(self.master_url, timeout=35)
+            resp = self.http.get(self.master_url, timeout=60)
             resp.raise_for_status()
             data = resp.json()
             if not isinstance(data, list) or len(data) == 0:
                 raise DiscoveryError(f"Instrument master returned empty or invalid schema from {self.master_url}")
             self._save_to_cache(data)
-            return data
+            return self._load_from_cache()
         except Exception as e:
             # Fallback to existing cache even if stale, if download failed
             if CACHE_FILE.exists():
@@ -193,8 +198,11 @@ class DynamicInstrumentDiscovery:
 
         try:
             strike = float(raw.get("strike", 0.0) or 0.0)
-            # In Angel scrip master, strike is often multiplied by 100
-            if strike > 100000.0:
+            # In Angel One scrip master, NFO derivative strikes are provided in paise (multiplied by 100).
+            # E.g., ₹72.00 is stored as 7200.0, ₹240.00 as 24000.0, ₹10900.00 as 1090000.0.
+            if exch_seg == "NFO" and strike > 0:
+                strike = strike / 100.0
+            elif strike > 100000.0:
                 strike = strike / 100.0
         except (ValueError, TypeError):
             strike = 0.0

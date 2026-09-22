@@ -98,6 +98,17 @@ class TelegramSignalDispatcher:
                     msg_id = data.get("result", {}).get("message_id", "")
                     logger.info("Telegram signal %s delivered successfully (msg_id: %s)", sig.signal_id, msg_id)
                     return True, f"Delivered (msg_id: {msg_id})"
+
+            # If Markdown parsing failed (e.g. unescaped symbols in news headline), retry as plain text
+            if resp.status_code == 400 and "parse entities" in resp.text.lower():
+                logger.warning("Markdown parse error on signal %s; retrying dispatch as plain text...", sig.signal_id)
+                payload.pop("parse_mode", None)
+                retry_resp = self.http.post(url, json=payload, timeout=15)
+                if retry_resp.status_code == 200 and retry_resp.json().get("ok"):
+                    msg_id = retry_resp.json().get("result", {}).get("message_id", "")
+                    logger.info("Telegram signal %s delivered via plain text fallback (msg_id: %s)", sig.signal_id, msg_id)
+                    return True, f"Delivered (fallback msg_id: {msg_id})"
+
             err = f"Telegram API error HTTP {resp.status_code}: {resp.text}"
             logger.error("Failed to deliver signal %s: %s", sig.signal_id, err)
             return False, err

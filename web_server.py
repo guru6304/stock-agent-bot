@@ -21,6 +21,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
 
 load_dotenv()
+os.makedirs("logs", exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -138,7 +139,9 @@ def run_scheduler():
             # Weekly optimization Sundays at 18:00
             sched_lib.every().sunday.at("18:00").do(agent._run_weekly_optimization)
 
-            # Run once safely on boot if market is open
+            # Allow cloud health check to stabilize on Render before running initial scan
+            logger.info("Scheduler waiting 15s grace period for health check to stabilize...")
+            time.sleep(15)
             try:
                 agent.run_scheduled(paper_mode=False)
             except Exception as se:

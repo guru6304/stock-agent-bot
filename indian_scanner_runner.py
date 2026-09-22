@@ -13,7 +13,7 @@ import logging
 import os
 import sys
 import time
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -169,17 +169,25 @@ class IndianMarketScannerRunner:
 
                 # Evaluate equity horizons
                 eq_signals = self.signal_engine.evaluate_equity_horizons(inst, candles, live_q)
+                if not eq_signals:
+                    continue
 
-                for sig in eq_signals:
-                    signals_found.append(sig)
+                # Select highest-conviction setup for this instrument
+                eq_signals.sort(key=lambda s: s.quality_score, reverse=True)
+                primary_sig = eq_signals[0]
 
-                    # If equity conviction exists, also check for dynamic F&O option contract
-                    fno_contracts = self.discovery.get_fno_contracts_for_underlying(inst.symbol)
-                    if fno_contracts:
-                        underlying_spot = live_q.price if live_q else float(candles.df["Close"].iloc[-1])
-                        fno_sig = self.signal_engine.evaluate_intraday_fno(sig, fno_contracts, underlying_spot)
-                        if fno_sig:
+                # Check for dynamic F&O option contract matching the conviction setup
+                fno_contracts = self.discovery.get_fno_contracts_for_underlying(inst.symbol)
+                if fno_contracts:
+                    underlying_spot = live_q.price if live_q else float(candles.df["Close"].iloc[-1])
+                    fno_sig = self.signal_engine.evaluate_intraday_fno(primary_sig, fno_contracts, underlying_spot)
+                    if fno_sig and fno_sig.fno_details:
+                        # Consolidate validated option contract directly inside the equity signal card
+                        primary_sig = replace(primary_sig, fno_details=fno_sig.fno_details)
+                        if os.getenv("EMIT_FNO_AS_SEPARATE_SIGNAL", "0") == "1":
                             signals_found.append(fno_sig)
+
+                signals_found.append(primary_sig)
 
             except Exception as e:
                 error_count += 1
@@ -232,6 +240,8 @@ class IndianMarketScannerRunner:
 
         SUMMARY_FILE.write_text(json.dumps(summary, indent=2), encoding="utf-8")
         logger.info("Cycle finished in %.1fs. Summary written to %s\n", cycle_duration, SUMMARY_FILE)
+        import gc
+        gc.collect()
         return summary
 
 
