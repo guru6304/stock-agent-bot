@@ -92,11 +92,11 @@ def get_metrics(s:str,angel:Angel)->Optional[Metrics]:
     if not intra.empty and {"High","Low","Close","Volume"}.issubset(intra):
         typical=(intra.High+intra.Low+intra.Close)/3; denom=intra.Volume.sum()
         vw=float((typical*intra.Volume).sum()/denom) if denom else None; orb=float(intra.High.tail(15).max())
-    quality=price>e200 and float(c.pct_change(252).iloc[-1])>-0.20
+    quality=price>e200 and float(c.pct_change(252, fill_method=None).iloc[-1])>-0.20
     return Metrics(s,price,float(h.iloc[-1]),float(l.iloc[-1]),float(c.tail(20).mean()),e20,e50,e200,float(v.iloc[-1]/max(v.tail(21).iloc[:-1].mean(),1)),float(h.tail(4).iloc[:-1].max()),float(h.tail(21).iloc[:-1].max()),float(tr.tail(14).mean()),vw,orb,"Angel One SmartAPI" if live else "yfinance NSE",quality)
 
 def classify(m:Metrics)->Optional[Signal]:
-    p,atr=m.price,max(m.atr,p*.003); style=action=thesis=None
+    p=m.price; atr=max(m.atr,p*.003); style=action=thesis=None
     if m.vwap and m.orb and p>m.vwap and p>=m.orb*.998 and m.vol_ratio>=1.5:
         style,action,stop,thesis="INTRADAY","BUY",min(m.vwap,p*.987),"VWAP reclaim is holding as price challenges the opening-range high on expanded participation."
     elif p>m.high3 and p>m.ema20 and m.vol_ratio>=1.5:
@@ -175,6 +175,7 @@ def main():
     command=sys.argv[1].lower() if len(sys.argv)>1 else "scan"
     if command=="scan":scan()
     elif command=="briefing":briefing()
+    elif command=="eod":eod()
     elif command in ("dashboard", "web", "server"):
         import web_server
         web_server.main()
