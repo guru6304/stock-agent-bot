@@ -479,6 +479,14 @@ def cmd_check(args=""):
 
 def cmd_scan(args=""):
     """Quick scan — holdings signals + top buy opportunities from full watchlist."""
+    if is_indian_market():
+        try:
+            import cli
+            cli.scan(force=True)
+            return "Executed live NSE market scan above 👆"
+        except Exception as e:
+            return "Scan error: %s" % e
+
     try:
         import data_layer
         import signal_engine
@@ -758,6 +766,16 @@ def cmd_market(args=""):
         return "\n".join(lines)
     except Exception as e:
         return "Error checking market status: %s" % e
+
+
+def cmd_eod(args=""):
+    """Generate and dispatch today's end-of-day trade performance scorecard."""
+    try:
+        import cli
+        cli.eod()
+        return "Dispatched today's EOD Trade Scorecard above 👆"
+    except Exception as e:
+        return "EOD scorecard error: %s" % e
 
 
 def cmd_briefing(args=""):
@@ -1314,6 +1332,7 @@ def cmd_help(args=""):
         "\n"
         "INDIAN PAPER SIGNALS\n"
         "/market    — Check NSE open/close status & trading holidays\n"
+        "/eod       — Today's End-of-Day P&L Scorecard for all signals\n"
         "/indiascan — Live dynamic scan of Indian market (NSE)\n"
         "/indiaregime — Indian market regime (Nifty 50 & India VIX)\n"
         "\n"
@@ -1364,6 +1383,7 @@ def cmd_indiaregime(args=""):
 
 COMMANDS = {
     "/market": cmd_market,
+    "/eod": cmd_eod,
     "/indiascan": cmd_indiascan,
     "/indiaregime": cmd_indiaregime,
     "/status": cmd_status,

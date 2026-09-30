@@ -369,13 +369,22 @@ def _send_daily_briefing() -> None:
 
 
 def _send_eod_report() -> None:
-    """Generate and send end-of-day report (Telegram only; email is in the digest)."""
+    """Generate and send end-of-day report."""
     global _eod_report_cache, _eod_report_cache_date
+    if os.getenv("MARKET", "").upper() == "INDIA" or os.getenv("TIMEZONE") == "Asia/Kolkata":
+        try:
+            logger.info("Executing Indian End-of-Day Trade Scorecard audit...")
+            import cli
+            cli.eod()
+            return
+        except Exception as e:
+            logger.error("Indian EOD scorecard failed: %s", e)
+            return
+
     try:
         report = eod_report.generate_report()
         eod_report.save_report(report)
         eod_report.send_report(report)
-        # Cache formatted text so _send_daily_digest() reuses it instead of regenerating
         try:
             _eod_report_cache = eod_report.format_report(report)
             _eod_report_cache_date = datetime.now().date()
