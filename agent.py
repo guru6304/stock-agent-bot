@@ -253,11 +253,10 @@ def scan_ticker(ticker: str, sector: str = "Technology", paper_mode: bool = Fals
 def run_scan(paper_mode: bool = False) -> None:
     """Scan the entire watchlist."""
     if os.getenv("TIMEZONE") == "Asia/Kolkata" or os.getenv("MARKET", "").upper() == "INDIA":
-        logger.info("Executing Dynamic Indian Market Scanner (NSE / BSE)...")
+        logger.info("Executing Beast-Mode NSE Scan with Angel One live exchange data...")
         try:
-            from indian_scanner_runner import IndianMarketScannerRunner
-            runner = IndianMarketScannerRunner()
-            runner.run_cycle(force=True)
+            import cli
+            cli.scan(force=False)
             return
         except Exception as e:
             logger.error("Indian market scan failed: %s", e, exc_info=True)
@@ -355,6 +354,16 @@ def run_scan(paper_mode: bool = False) -> None:
 
 def _send_daily_briefing() -> None:
     """Generate morning briefing — Telegram only; email goes in the 4:25 PM digest."""
+    if os.getenv("MARKET", "").upper() == "INDIA" or os.getenv("TIMEZONE") == "Asia/Kolkata":
+        try:
+            logger.info("Executing Indian Pre-Market Briefing cues...")
+            import cli
+            cli.briefing()
+            return
+        except Exception as e:
+            logger.error("Indian briefing failed: %s", e)
+            return
+
     try:
         briefing = daily_briefing.generate_briefing()
         text = daily_briefing.format_briefing(briefing)

@@ -93,7 +93,7 @@ CORE_FNO_MOVERS = [
     "KOTAKBANK", "LT", "AXISBANK", "TATAMOTORS", "MARUTI", "SUNPHARMA", "TITAN",
     "BAJFINANCE", "TATASTEEL", "NTPC", "POWERGRID", "M&M", "ADANIENT", "ADANIPORTS",
     "COALINDIA", "ONGC", "TRENT", "BEL", "HAL", "DIXON", "BHEL", "CANBK", "POLYCAB",
-    "ZOMATO", "SUZLON", "FEDERALBNK", "PFC", "REC", "TATAPOWER", "ASHOKLEY", "DLF",
+    "ZOMATO", "SUZLON", "FEDERALBNK", "PFC", "RECLTD", "TATAPOWER", "ASHOKLEY", "DLF",
     "JINDALSTEL", "HINDALCO", "VEDL", "CHOLAFIN", "INDUSINDBK", "PERSISTENT", "COFORGE",
     "APOLLOHOSP", "SIEMENS", "ABB", "CUMMINSIND", "VOLTAS", "TATACHEM", "JUBLFOOD",
     "MUTHOOTFIN", "SHRIRAMFIN", "AUBANK", "BANDHANBNK", "IDFCFIRSTB", "SAIL", "NMDC",
@@ -137,15 +137,15 @@ def watchlist() -> list[str]:
     return out[:limit]
 
 class Angel:
-    """SmartAPI authentication and LTP source; failures gracefully fall back to yfinance."""
+    """SmartAPI authentication and live market data; failures gracefully fall back to yfinance."""
     def __init__(self):
         self.api = None
-        self.tokens = {}
+        self.tokens: dict[str, str] = {}
         required = ("ANGEL_API_KEY", "ANGEL_CLIENT_CODE", "ANGEL_PIN", "ANGEL_TOTP_KEY")
         if not all(env(x) for x in required):
             return
         if not SmartConnect or not pyotp:
-            LOG.warning("Angel credentials found but smartapi-python/pyotp are not installed")
+            LOG.warning("Angel credentials found but SmartApi/pyotp are not installed")
             return
         try:
             self.api = SmartConnect(api_key=env("ANGEL_API_KEY"))
@@ -154,17 +154,35 @@ class Angel:
             if not session or not session.get("status"):
                 raise RuntimeError((session or {}).get("message", "login rejected"))
             LOG.info("Angel One session authenticated")
-            try:
-                scrip_url = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
-                data = HTTP.get(scrip_url, timeout=25).json()
-                self.tokens = {
-                    str(x.get("symbol", "")).replace("-EQ", ""): str(x.get("token", ""))
-                    for x in data
-                    if x.get("exch_seg") == "NSE" and str(x.get("symbol", "")).endswith("-EQ")
-                }
-                LOG.info("Angel One token map loaded (%d equity tokens)", len(self.tokens))
-            except Exception as te:
-                LOG.warning("Could not load Angel token map: %s", te)
+
+            # Fast disk cache for token map (24-hour expiration)
+            cache_file = Path("logs/angel_tokens.json")
+            cache_valid = False
+            if cache_file.exists():
+                try:
+                    mtime = cache_file.stat().st_mtime
+                    if (datetime.now().timestamp() - mtime) < 86400:  # < 24 hours
+                        self.tokens = json.loads(cache_file.read_text(encoding="utf8"))
+                        if self.tokens:
+                            cache_valid = True
+                            LOG.info("Angel One token map loaded from disk cache (%d equity tokens)", len(self.tokens))
+                except Exception:
+                    cache_valid = False
+
+            if not cache_valid:
+                try:
+                    scrip_url = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
+                    data = HTTP.get(scrip_url, timeout=25).json()
+                    self.tokens = {
+                        str(x.get("symbol", "")).replace("-EQ", ""): str(x.get("token", ""))
+                        for x in data
+                        if x.get("exch_seg") == "NSE" and str(x.get("symbol", "")).endswith("-EQ")
+                    }
+                    LOG.info("Angel One token map fetched from OpenAPI master (%d equity tokens)", len(self.tokens))
+                    cache_file.parent.mkdir(parents=True, exist_ok=True)
+                    cache_file.write_text(json.dumps(self.tokens), encoding="utf8")
+                except Exception as te:
+                    LOG.warning("Could not load Angel token map: %s", te)
         except Exception as e:
             self.api = None
             LOG.warning("Angel unavailable; falling back to yfinance NSE: %s", e)
@@ -179,24 +197,70 @@ class Angel:
         except Exception:
             return None
 
+    def batch_quotes(self, symbols: list[str]) -> dict[str, dict]:
+        """Fetch full live market depth & quotes for all symbols in 50-token chunks."""
+        if not self.api or not self.tokens:
+            return {}
+        results = {}
+        token_to_sym = {self.tokens[s]: s for s in symbols if s in self.tokens}
+        all_tokens = list(token_to_sym.keys())
+        for i in range(0, len(all_tokens), 50):
+            chunk = all_tokens[i:i+50]
+            try:
+                res = self.api.getMarketData("FULL", {"NSE": chunk})
+                for item in (res or {}).get("data", {}).get("fetched", []):
+                    sym_token = str(item.get("symbolToken", ""))
+                    sym = token_to_sym.get(sym_token)
+                    if sym:
+                        results[sym] = {
+                            "ltp": float(item.get("ltp") or 0),
+                            "high": float(item.get("high") or 0),
+                            "low": float(item.get("low") or 0),
+                            "close": float(item.get("close") or 0),
+                            "open": float(item.get("open") or 0),
+                            "vwap": float(item.get("avgPrice") or 0),
+                            "volume": float(item.get("tradeVolume") or 0),
+                            "change_pct": float(item.get("percentChange") or 0),
+                        }
+            except Exception as e:
+                LOG.warning("Angel batch quote error: %s", e)
+        return results
+
+_YF_DAILY_CACHE: dict[str, tuple[float, pd.DataFrame]] = {}
+
 def yf_history(s: str, period: str, interval="1d") -> pd.DataFrame:
+    # 6-hour intraday cache for daily technical anchors (EMA20/50/200, ATR, RSI)
+    if interval == "1d" and period == "1y" and s in _YF_DAILY_CACHE:
+        ts, df = _YF_DAILY_CACHE[s]
+        if (datetime.now().timestamp() - ts) < 21600 and not df.empty:
+            return df
+
     try:
         d = yf.download(s + ".NS", period=period, interval=interval, auto_adjust=True, progress=False, threads=False)
         if isinstance(d.columns, pd.MultiIndex):
             d.columns = d.columns.get_level_values(0)
-        return d.dropna(how="all")
+        res = d.dropna(how="all")
+        if interval == "1d" and period == "1y" and not res.empty:
+            _YF_DAILY_CACHE[s] = (datetime.now().timestamp(), res)
+        return res
     except Exception as e:
         LOG.debug("NSE fallback failed for %s: %s", s, e)
         return pd.DataFrame()
 
-def get_metrics(s: str, angel: Angel) -> Optional[Metrics]:
+def get_metrics(s: str, angel: Angel, live_data: Optional[dict] = None) -> Optional[Metrics]:
     d = yf_history(s, "1y")
     if len(d) < 50 or not {"Close", "High", "Low", "Volume"}.issubset(d):
         return None
 
     c, h, l, v = (d[x].astype(float) for x in ("Close", "High", "Low", "Volume"))
-    live = angel.quote(s)
-    price = live or float(c.iloc[-1])
+
+    # Prefer batch live market quote from Angel One (0s delay directly from NSE)
+    live_ltp = live_data.get("ltp") if live_data else angel.quote(s)
+    price = live_ltp or float(c.iloc[-1])
+    is_live = bool(live_ltp)
+
+    live_high = max(float(live_data.get("high") or 0), price) if live_data and live_data.get("high") else float(h.iloc[-1])
+    live_low = min(float(live_data.get("low") or price), price) if live_data and live_data.get("low") else float(l.iloc[-1])
 
     e20 = float(c.ewm(span=20, adjust=False).mean().iloc[-1])
     e50 = float(c.ewm(span=50, adjust=False).mean().iloc[-1])
@@ -208,7 +272,10 @@ def get_metrics(s: str, angel: Angel) -> Optional[Metrics]:
 
     # 20d average volume
     avg_vol_20 = max(float(v.tail(21).iloc[:-1].mean()), 1.0)
-    vol_ratio = float(v.iloc[-1] / avg_vol_20)
+    if live_data and live_data.get("volume", 0) > 0:
+        vol_ratio = float(live_data["volume"] / avg_vol_20)
+    else:
+        vol_ratio = float(v.iloc[-1] / avg_vol_20)
 
     # Relative strength (RSI 14)
     delta = c.diff()
@@ -223,23 +290,29 @@ def get_metrics(s: str, angel: Angel) -> Optional[Metrics]:
     high20 = float(h.tail(21).iloc[:-1].max()) if len(h) >= 21 else float(h.max())
     low20 = float(l.tail(21).iloc[:-1].min()) if len(l) >= 21 else float(l.min())
 
-    # Intraday 5m data for VWAP and Opening Range (ORB)
-    intra = yf_history(s, "5d", "5m")
+    # Intraday VWAP: prefer official exchange VWAP (avgPrice) from Angel One SmartAPI
     vw = orb_high = orb_low = None
-    if not intra.empty and {"High", "Low", "Close", "Volume"}.issubset(intra):
-        typical = (intra.High + intra.Low + intra.Close) / 3
-        denom = intra.Volume.sum()
-        vw = float((typical * intra.Volume).sum() / denom) if denom else None
-        orb_high = float(intra.High.tail(15).max())
-        orb_low = float(intra.Low.tail(15).min())
+    if live_data and live_data.get("vwap", 0) > 0:
+        vw = float(live_data["vwap"])
+        orb_high = live_high
+        orb_low = live_low
+    else:
+        # Fallback to intraday 5m data if Angel VWAP not available
+        intra = yf_history(s, "5d", "5m")
+        if not intra.empty and {"High", "Low", "Close", "Volume"}.issubset(intra):
+            typical = (intra.High + intra.Low + intra.Close) / 3
+            denom = intra.Volume.sum()
+            vw = float((typical * intra.Volume).sum() / denom) if denom else None
+            orb_high = float(intra.High.tail(15).max())
+            orb_low = float(intra.Low.tail(15).min())
 
     quality = price > e200 and (len(c) < 252 or float(c.pct_change(min(252, len(c)-1), fill_method=None).iloc[-1]) > -0.20)
 
     return Metrics(
         symbol=s,
         price=price,
-        high=float(h.iloc[-1]),
-        low=float(l.iloc[-1]),
+        high=live_high,
+        low=live_low,
         sma20=sma20,
         ema20=e20,
         ema50=e50,
@@ -254,7 +327,7 @@ def get_metrics(s: str, angel: Angel) -> Optional[Metrics]:
         orb_high=orb_high,
         orb_low=orb_low,
         rsi=rsi,
-        source="Angel One SmartAPI" if live else "yfinance NSE",
+        source="Angel One SmartAPI (Live Feed)" if is_live else "yfinance NSE",
         quality=quality,
     )
 
@@ -375,9 +448,12 @@ def classify(m: Metrics) -> Optional[Signal]:
             fno_info=fno_info,
         )
 
+_gemini_active = True
+
 def ai_thesis(s: Signal, m: Metrics) -> str:
     """Gemini synthesizes the card trigger from technical inputs if configured."""
-    if not env("GEMINI_API_KEY") or not genai:
+    global _gemini_active
+    if not _gemini_active or not env("GEMINI_API_KEY") or not genai:
         return s.thesis
     prompt = (
         "You are the synthesis step for a concrete NSE trade card. Return exactly one factual "
@@ -393,7 +469,12 @@ def ai_thesis(s: Signal, m: Metrics) -> str:
         text = re.sub(r"\s+", " ", res.text.strip())
         return text if text and len(text) <= 240 else s.thesis
     except Exception as e:
-        LOG.debug("Gemini synthesis skipped for %s: %s", m.symbol, e)
+        err = str(e)
+        if "401" in err or "API_KEY_INVALID" in err or "Unauthorized" in err:
+            _gemini_active = False
+            LOG.warning("Gemini API key is unauthorized — disabling Gemini synthesis to optimize scan latency")
+        else:
+            LOG.debug("Gemini synthesis skipped for %s: %s", m.symbol, e)
         return s.thesis
 
 def card(s: Signal) -> str:
@@ -457,13 +538,19 @@ def scan(force: bool = False):
     """Scan expanded liquid universe, apply strict deduplication, and emit only FRESH signals."""
     LOG.info("Executing Beast-Mode NSE Scan across liquid universe...")
     angel = Angel()
-    signals = []
+    wl = watchlist()
 
+    # Pre-fetch live real-time exchange ticks (0-delay) for full universe in batches of 50
+    live_quotes = angel.batch_quotes(wl) if angel.api else {}
+    if live_quotes:
+        LOG.info("Fetched live real-time NSE exchange quotes for %d/%d symbols via SmartAPI", len(live_quotes), len(wl))
+
+    signals = []
     today_emitted = get_today_emitted_keys()
 
-    for s in watchlist():
+    for s in wl:
         try:
-            m = get_metrics(s, angel)
+            m = get_metrics(s, angel, live_data=live_quotes.get(s))
             sig = classify(m) if m else None
             if sig and m:
                 sig.thesis = ai_thesis(sig, m)
