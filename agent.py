@@ -76,6 +76,14 @@ for lib in ("urllib3", "yfinance", "peewee"):
 
 def is_market_hours() -> bool:
     """Return True if current time is within configured market hours."""
+    # Check Indian market with official NSE trading calendar and holidays
+    if os.getenv("MARKET", "").upper() == "INDIA" or os.getenv("TIMEZONE") == "Asia/Kolkata":
+        try:
+            import india_market_config
+            return india_market_config.is_market_hours()
+        except Exception as e:
+            logger.debug("Indian market hours check failed: %s", e)
+
     try:
         import pytz
         tz_name = os.getenv("TIMEZONE", "America/New_York")

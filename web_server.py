@@ -59,6 +59,13 @@ class HealthHandler(BaseHTTPRequestHandler):
         _status["last_health_check"] = datetime.now().isoformat()
 
         if self.path == "/health" or self.path == "/":
+            try:
+                import india_market_config
+                is_open, mkt_desc = india_market_config.get_market_status()
+            except Exception:
+                is_open = agent.is_market_hours()
+                mkt_desc = "OPEN" if is_open else "CLOSED"
+
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -68,8 +75,11 @@ class HealthHandler(BaseHTTPRequestHandler):
                 "uptime_since": _status["started_at"],
                 "telegram_bot": _status["telegram_bot"],
                 "scheduler": _status["scheduler"],
+                "market": os.getenv("MARKET", "INDIA"),
+                "is_market_open": is_open,
+                "market_status": mkt_desc,
                 "checked_at": _status["last_health_check"],
-            }).encode())
+            }, indent=2).encode())
         else:
             self.send_response(404)
             self.end_headers()
@@ -143,9 +153,20 @@ def run_scheduler():
             logger.info("Scheduler waiting 15s grace period for health check to stabilize...")
             time.sleep(15)
             try:
-                agent.run_scheduled(paper_mode=False)
-            except Exception as se:
-                logger.error("Initial scheduled scan encountered error: %s", se)
+                import india_market_config
+                mkt_open, mkt_msg = india_market_config.get_market_status()
+            except Exception:
+                mkt_open = agent.is_market_hours()
+                mkt_msg = "OPEN" if mkt_open else "CLOSED"
+
+            if mkt_open:
+                logger.info("Market is OPEN (%s) — running initial scan...", mkt_msg)
+                try:
+                    agent.run_scheduled(paper_mode=False)
+                except Exception as se:
+                    logger.error("Initial scheduled scan encountered error: %s", se)
+            else:
+                logger.info("Market is CLOSED (%s) — initial scan skipped. Scheduler active and awaiting market open.", mkt_msg)
 
             while True:
                 sched_lib.run_pending()

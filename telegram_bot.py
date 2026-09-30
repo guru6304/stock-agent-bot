@@ -329,6 +329,17 @@ def cmd_status(args=""):
 
         lines = ["Portfolio Summary"]
         lines.append("=" * 30)
+
+        # Market status
+        if is_indian_market():
+            try:
+                import india_market_config
+                is_open, mkt_status = india_market_config.get_market_status()
+                status_icon = "🟢" if is_open else "🔴"
+                lines.append("Market: %s %s" % (status_icon, mkt_status))
+            except Exception:
+                pass
+
         lines.append("Net Liq: %s%s" % (cur, f"{total:,.0f}"))
         lines.append("Cash: %s%s" % (cur, f"{cash:,.0f}"))
         lines.append("Positions: %d" % len(holdings))
@@ -724,6 +735,29 @@ def cmd_regime(args=""):
             result.get("params", {}).get("description", ""))
     except Exception as e:
         return "Regime error: %s" % e
+
+
+def cmd_market(args=""):
+    """Check whether Indian market is open or closed, holiday calendar status, and trading hours."""
+    try:
+        import india_market_config
+        is_open, desc = india_market_config.get_market_status()
+        now_dt = india_market_config.now_ist()
+        holiday = india_market_config.get_holiday_name(now_dt)
+
+        status_emoji = "🟢" if is_open else "🔴"
+        lines = [f"{status_emoji} Indian Market Status (NSE / BSE)"]
+        lines.append("=" * 35)
+        lines.append(f"Status: {desc}")
+        lines.append(f"Current IST: {now_dt.strftime('%A, %d %b %Y %H:%M:%S')}")
+        lines.append("Regular Hours: 09:15 – 15:30 IST (Mon-Fri)")
+        lines.append("Pre-Market: 09:00 – 09:08 IST")
+        lines.append("Post-Market: 15:40 – 16:00 IST")
+        if holiday:
+            lines.append(f"\n⚠️ NSE Trading Holiday Today: {holiday}")
+        return "\n".join(lines)
+    except Exception as e:
+        return "Error checking market status: %s" % e
 
 
 def cmd_briefing(args=""):
@@ -1279,6 +1313,7 @@ def cmd_help(args=""):
         "/alerts    — Price alerts\n"
         "\n"
         "INDIAN PAPER SIGNALS\n"
+        "/market    — Check NSE open/close status & trading holidays\n"
         "/indiascan — Live dynamic scan of Indian market (NSE)\n"
         "/indiaregime — Indian market regime (Nifty 50 & India VIX)\n"
         "\n"
@@ -1328,6 +1363,7 @@ def cmd_indiaregime(args=""):
 
 
 COMMANDS = {
+    "/market": cmd_market,
     "/indiascan": cmd_indiascan,
     "/indiaregime": cmd_indiaregime,
     "/status": cmd_status,

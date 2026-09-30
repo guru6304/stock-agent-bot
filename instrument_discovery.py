@@ -19,6 +19,7 @@ import requests
 
 from india_market_config import (
     ALLOWED_EXCHANGES,
+    ALLOWED_SEGMENTS,
     DEFAULT_SCANNER_CONFIG,
     EXCHANGE_NSE,
     now_ist,
