@@ -154,6 +154,17 @@ class Angel:
             if not session or not session.get("status"):
                 raise RuntimeError((session or {}).get("message", "login rejected"))
             LOG.info("Angel One session authenticated")
+            try:
+                scrip_url = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
+                data = HTTP.get(scrip_url, timeout=25).json()
+                self.tokens = {
+                    str(x.get("symbol", "")).replace("-EQ", ""): str(x.get("token", ""))
+                    for x in data
+                    if x.get("exch_seg") == "NSE" and str(x.get("symbol", "")).endswith("-EQ")
+                }
+                LOG.info("Angel One token map loaded (%d equity tokens)", len(self.tokens))
+            except Exception as te:
+                LOG.warning("Could not load Angel token map: %s", te)
         except Exception as e:
             self.api = None
             LOG.warning("Angel unavailable; falling back to yfinance NSE: %s", e)
