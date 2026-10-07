@@ -131,6 +131,38 @@ def calculate_technicals(df: pd.DataFrame) -> Optional[dict]:
     high_20d = float(high.iloc[-21:-1].max()) if len(high) >= 21 else price
     low_20d = float(low.iloc[-21:-1].min()) if len(low) >= 21 else price
 
+    # -------------------------------------------------------------
+    # Central Pivot Range (CPR) Calculation
+    # -------------------------------------------------------------
+    prev_h = float(high.iloc[-2]) if len(high) >= 2 else price
+    prev_l = float(low.iloc[-2]) if len(low) >= 2 else price
+    prev_c = float(close.iloc[-2]) if len(close) >= 2 else price
+    cpr_pivot = (prev_h + prev_l + prev_c) / 3.0
+    cpr_bc = (prev_h + prev_l) / 2.0
+    cpr_tc = (2.0 * cpr_pivot) - cpr_bc
+    cpr_top = max(cpr_tc, cpr_bc)
+    cpr_bottom = min(cpr_tc, cpr_bc)
+    cpr_width_pct = abs(cpr_top - cpr_bottom) / max(cpr_pivot, 1.0) * 100.0
+    is_narrow_cpr = cpr_width_pct <= 0.35
+    is_wide_cpr = cpr_width_pct >= 0.70
+
+    # -------------------------------------------------------------
+    # Larry Connors RSI(2) & 5-day SMA Mean Reversion Metrics
+    # -------------------------------------------------------------
+    gain2 = delta.where(delta > 0, 0.0).rolling(2).mean()
+    loss2 = (-delta.where(delta < 0, 0.0)).rolling(2).mean()
+    last_gain2 = float(gain2.iloc[-1]) if not pd.isna(gain2.iloc[-1]) else 0.0
+    last_loss2 = float(loss2.iloc[-1]) if not pd.isna(loss2.iloc[-1]) else 0.0
+    if last_loss2 == 0.0:
+        rsi_2 = 100.0 if last_gain2 > 0 else 50.0
+    elif last_gain2 == 0.0:
+        rsi_2 = 0.0 if last_loss2 > 0 else 50.0
+    else:
+        rs2 = last_gain2 / last_loss2
+        rsi_2 = float(100.0 - (100.0 / (1.0 + rs2)))
+
+    sma5 = float(close.rolling(5).mean().iloc[-1])
+
     return {
         "price": price,
         "ema20": ema20,
@@ -143,6 +175,14 @@ def calculate_technicals(df: pd.DataFrame) -> Optional[dict]:
         "low_3d": low_3d,
         "high_20d": high_20d,
         "low_20d": low_20d,
+        "cpr_pivot": round(cpr_pivot, 2),
+        "cpr_top": round(cpr_top, 2),
+        "cpr_bottom": round(cpr_bottom, 2),
+        "cpr_width_pct": round(cpr_width_pct, 2),
+        "is_narrow_cpr": is_narrow_cpr,
+        "is_wide_cpr": is_wide_cpr,
+        "rsi_2": round(rsi_2, 1),
+        "sma5": round(sma5, 2),
     }
 
 
@@ -457,8 +497,10 @@ class IndianSignalEngine:
         # -------------------------------------------------------------
         # 0. Intraday Institutional Momentum & Volume Surge Breakout
         # -------------------------------------------------------------
+        # Wide-CPR filter: skip breakouts on choppy/wide CPR days to prevent false breakout bull traps
         if (
-            p > tech["high_3d"]
+            not tech.get("is_wide_cpr", False)
+            and p > tech["high_3d"]
             and p > tech["ema20"]
             and tech["vol_ratio"] >= 1.75
             and tech["rsi"] >= 52
@@ -495,7 +537,12 @@ class IndianSignalEngine:
         # -------------------------------------------------------------
         # 1. Short-Term Equity Engine (Multi-day breakout with volume)
         # -------------------------------------------------------------
-        if p > tech["high_3d"] and p > tech["ema20"] and tech["vol_ratio"] >= self.config.volume_surge_ratio:
+        if (
+            not tech.get("is_wide_cpr", False)
+            and p > tech["high_3d"]
+            and p > tech["ema20"]
+            and tech["vol_ratio"] >= self.config.volume_surge_ratio
+        ):
             stop = round(min(tech["ema20"], p - 1.2 * atr), 2)
             risk = p - stop
             if risk > 0:
@@ -898,6 +945,81 @@ class IndianSignalEngine:
                     validity_period="2 to 6 weeks",
                     thesis=f"Institutional Relative Strength: Stock demonstrates elite alpha ({rs['ret_20d_pct']}% 20-day gain) in structural Stage 2 mark-up ({rs['alignment']}), consolidating near 20-day high ({CURRENCY_SYMBOL}{rs['high_20d']:.2f}).",
                     quality_score=9.8,
+                ))
+
+        # -------------------------------------------------------------
+        # 12. Larry Connors RSI(2) High-Probability Mean Reversion (65-75% Win Rate)
+        # -------------------------------------------------------------
+        if (
+            p > tech["sma200"]
+            and tech.get("rsi_2", 50.0) <= 12.0
+            and p >= tech["low_20d"] * 0.98
+        ):
+            stop = round(min(tech["low_3d"], p - 1.2 * atr), 2)
+            risk = p - stop
+            if risk > 0:
+                t1 = round(max(tech.get("sma5", p * 1.02), p + 1.5 * risk), 2)
+                t2 = round(p + 2.5 * risk, 2)
+                rr = round((t1 - p) / risk, 2)
+                signals.append(IndianTradeSignal(
+                    signal_id=_generate_signal_id(inst.symbol, "CONNORS_RSI2", "BUY", today_str),
+                    horizon=SignalHorizon.SHORT_TERM_EQUITY,
+                    strategy_name="Larry Connors RSI(2) Mean Reversion",
+                    strategy_version="1.0.0",
+                    symbol=inst.symbol,
+                    exchange=inst.exch_seg,
+                    token=inst.token,
+                    direction="BUY",
+                    signal_time_ist=ts_ist,
+                    data_source=sig_source,
+                    data_timestamp=sig_ts,
+                    entry_range_low=round(p * 0.996, 2),
+                    entry_range_high=round(p * 1.004, 2),
+                    stop_loss=stop,
+                    target_1=t1,
+                    target_2=t2,
+                    risk_reward_ratio=rr,
+                    validity_period="2 to 5 trading sessions",
+                    thesis=f"Connors RSI(2) Institutional Mean Reversion: Panic exhaustion print (RSI(2) at {tech.get('rsi_2', 0.0):.1f}) in an established Stage 2 uptrend above 200 SMA. Snapping back toward 5-day SMA ({CURRENCY_SYMBOL}{tech.get('sma5', p):.2f}).",
+                    quality_score=9.8,
+                ))
+
+        # -------------------------------------------------------------
+        # 13. Narrow-CPR Range Expansion Trend Breakout (Intraday)
+        # -------------------------------------------------------------
+        if (
+            tech.get("is_narrow_cpr", False)
+            and p > tech.get("cpr_top", p)
+            and p > tech["ema20"]
+            and tech["vol_ratio"] >= 1.25
+        ):
+            stop = round(max(tech.get("cpr_bottom", p * 0.98) - 0.2 * atr, p - 1.2 * atr), 2)
+            risk = p - stop
+            if risk > 0:
+                t1 = round(p + 2.0 * risk, 2)
+                t2 = round(p + 3.5 * risk, 2)
+                rr = round((t1 - p) / risk, 2)
+                signals.append(IndianTradeSignal(
+                    signal_id=_generate_signal_id(inst.symbol, "NARROW_CPR", "BUY", today_str),
+                    horizon=SignalHorizon.INTRADAY_EQUITY,
+                    strategy_name="Narrow-CPR Range Expansion Trend Day",
+                    strategy_version="1.0.0",
+                    symbol=inst.symbol,
+                    exchange=inst.exch_seg,
+                    token=inst.token,
+                    direction="BUY",
+                    signal_time_ist=ts_ist,
+                    data_source=sig_source,
+                    data_timestamp=sig_ts,
+                    entry_range_low=round(p * 0.998, 2),
+                    entry_range_high=round(p * 1.003, 2),
+                    stop_loss=stop,
+                    target_1=t1,
+                    target_2=t2,
+                    risk_reward_ratio=rr,
+                    validity_period="Intraday (Square off by 15:15 IST)",
+                    thesis=f"Narrow-CPR Trend Expansion: CPR width is ultra-narrow ({tech.get('cpr_width_pct', 0.0):.2f}%) indicating institutional accumulation; price breaking above TC ({CURRENCY_SYMBOL}{tech.get('cpr_top', p):.2f}) with volume.",
+                    quality_score=9.7,
                 ))
 
         # Resolve contradictory directional signals if present

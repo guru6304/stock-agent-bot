@@ -816,7 +816,117 @@ class TestIndianMarketSuite(unittest.TestCase):
         self.assertEqual(intraday_sigs[0].direction, "BUY")
         self.assertIn("Intraday Institutional Volume Breakout", intraday_sigs[0].strategy_name)
 
+    def test_larry_connors_rsi2_mean_reversion_strategy(self):
+        """Verify Larry Connors RSI(2) mean reversion setup fires on oversold panic in bull trend."""
+        inst = get_synthetic_equity_inst()
+        dates = pd.date_range(end=datetime.now(), periods=220, freq="D")
+        # Established long-term bull market (above 200 SMA)
+        prices = [300.0 + i * 1.0 for i in range(215)]
+        # Sharp 5-day panic sell-off pulling RSI(2) below 10
+        prices.append(505.0)
+        prices.append(495.0)
+        prices.append(485.0)
+        prices.append(475.0)
+        prices.append(465.0)
+
+        df = pd.DataFrame({
+            "Open": [p + 1.0 for p in prices],
+            "High": [p + 2.0 for p in prices],
+            "Low": [p - 2.0 for p in prices],
+            "Close": prices,
+            "Volume": [100000.0] * len(prices),
+        }, index=dates)
+
+        candles = CandleData(
+            df=df,
+            symbol="SYNTH_ALPHA",
+            token="990001",
+            interval="1d",
+            data_source="Synthetic Test Source",
+            is_live=True,
+            data_timestamp="2026-09-17 15:30:00",
+            is_candle_complete=True,
+        )
+
+        tech = calculate_technicals(df)
+        self.assertLessEqual(tech["rsi_2"], 12.0)
+        self.assertGreater(tech["price"], tech["sma200"])
+
+        engine = IndianSignalEngine()
+        signals = engine.evaluate_equity_horizons(inst, candles)
+        connors_sig = next((s for s in signals if "Connors" in s.strategy_name), None)
+        self.assertIsNotNone(connors_sig)
+        self.assertEqual(connors_sig.direction, "BUY")
+        self.assertEqual(connors_sig.horizon, SignalHorizon.SHORT_TERM_EQUITY)
+        self.assertGreaterEqual(connors_sig.quality_score, 9.5)
+
+    def test_cpr_calculation_and_wide_cpr_breakout_suppression(self):
+        """Verify CPR metrics are computed and Wide CPR blocks false breakout signals."""
+        dates = pd.date_range(end=datetime.now(), periods=100, freq="D")
+        base = 500.0
+        prices = [base + i * 0.2 for i in range(98)]
+        # Add a wide prior bar (e.g. High 550, Low 450) -> Wide CPR
+        highs = [p + 2.0 for p in prices] + [550.0, 520.0]
+        lows = [p - 2.0 for p in prices] + [450.0, 510.0]
+        closes = prices + [545.0, 518.0]
+        opens = [p - 1.0 for p in prices] + [480.0, 512.0]
+
+        df = pd.DataFrame({
+            "Open": opens,
+            "High": highs,
+            "Low": lows,
+            "Close": closes,
+            "Volume": [100000.0] * 100,
+        }, index=dates)
+
+        tech = calculate_technicals(df)
+        self.assertIn("cpr_pivot", tech)
+        self.assertIn("cpr_width_pct", tech)
+        self.assertTrue(tech["is_wide_cpr"])
+
+    def test_narrow_cpr_trend_breakout_strategy(self):
+        """Verify Narrow CPR trend day expansion strategy fires when price breaks TC."""
+        inst = get_synthetic_equity_inst()
+        dates = pd.date_range(end=datetime.now(), periods=100, freq="D")
+        base = 500.0
+        prices = [base + i * 0.5 for i in range(98)]
+        # Very tight prior bar (High 549, Low 548, Close 548.5) -> Narrow CPR
+        highs = [p + 1.0 for p in prices] + [549.0, 555.0]
+        lows = [p - 1.0 for p in prices] + [548.0, 548.0]
+        closes = prices + [548.5, 554.0]
+        opens = [p for p in prices] + [548.2, 549.0]
+
+        df = pd.DataFrame({
+            "Open": opens,
+            "High": highs,
+            "Low": lows,
+            "Close": closes,
+            "Volume": [100000.0] * 99 + [200000.0],
+        }, index=dates)
+
+        candles = CandleData(
+            df=df,
+            symbol="SYNTH_ALPHA",
+            token="990001",
+            interval="1d",
+            data_source="Synthetic Test Source",
+            is_live=True,
+            data_timestamp="2026-09-17 15:30:00",
+            is_candle_complete=True,
+        )
+
+        tech = calculate_technicals(df)
+        self.assertTrue(tech["is_narrow_cpr"])
+
+        engine = IndianSignalEngine()
+        signals = engine.evaluate_equity_horizons(inst, candles)
+        narrow_sig = next((s for s in signals if "Narrow-CPR" in s.strategy_name), None)
+        self.assertIsNotNone(narrow_sig)
+        self.assertEqual(narrow_sig.direction, "BUY")
+        self.assertEqual(narrow_sig.horizon, SignalHorizon.INTRADAY_EQUITY)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 
